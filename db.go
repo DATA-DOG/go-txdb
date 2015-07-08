@@ -71,81 +71,95 @@ import (
 // Use drv and dsn as the standard sql properties for
 // your test database connection to be isolated within transaction.
 func Register(name, drv, dsn string) {
-	sql.Register(name, &txDriver{dsn: dsn, drv: drv})
+	sql.Register(name, &txDriver{
+		dsn:   dsn,
+		drv:   drv,
+		conns: make(map[string]*conn),
+	})
 }
 
 // txDriver is an sql driver which runs on single transaction
 // when the Close is called, transaction is rolled back
-type txDriver struct {
-	conns int
+type conn struct {
 	sync.Mutex
-	tx *sql.Tx
+	tx     *sql.Tx
+	dsn    string
+	opened int
+	drv    *txDriver
+}
+
+type txDriver struct {
+	sync.Mutex
+	db    *sql.DB
+	conns map[string]*conn
 
 	drv string
 	dsn string
-	db  *sql.DB
 }
 
 func (d *txDriver) Open(dsn string) (driver.Conn, error) {
+	d.Lock()
+	defer d.Unlock()
 	// first open a real database connection
 	var err error
 	if d.db == nil {
 		db, err := sql.Open(d.drv, d.dsn)
 		if err != nil {
-			return d, err
+			return nil, err
 		}
 		d.db = db
 	}
-	if d.tx == nil {
-		d.tx, err = d.db.Begin()
+	c, ok := d.conns[dsn]
+	if !ok {
+		c = &conn{dsn: dsn, drv: d}
+		c.tx, err = d.db.Begin()
+		d.conns[dsn] = c
 	}
-	d.conns++
-	return d, err
+	c.opened++
+	return c, err
 }
 
-func (d *txDriver) Close() (err error) {
-	d.conns--
-	if d.conns == 0 {
-		err = d.tx.Rollback()
+func (c *conn) Close() (err error) {
+	c.drv.Lock()
+	defer c.drv.Unlock()
+	c.opened--
+	if c.opened == 0 {
+		err = c.tx.Rollback()
 		if err != nil {
 			return
 		}
-		d.tx = nil
-		err = d.db.Close()
-		if err != nil {
-			return
-		}
-		d.db = nil
+		c.tx = nil
+		delete(c.drv.conns, c.dsn)
 	}
 	return
 }
 
-func (d *txDriver) Begin() (driver.Tx, error) {
-	return d, nil
+func (c *conn) Begin() (driver.Tx, error) {
+	return c, nil
 }
 
-func (d *txDriver) Commit() error {
+func (c *conn) Commit() error {
 	return nil
 }
 
-func (d *txDriver) Rollback() error {
+func (c *conn) Rollback() error {
 	return nil
 }
 
-func (d *txDriver) Prepare(query string) (driver.Stmt, error) {
-	return &stmt{drv: d, query: query}, nil
+func (c *conn) Prepare(query string) (driver.Stmt, error) {
+	return &stmt{conn: c, query: query}, nil
 }
 
 type stmt struct {
 	query string
-	drv   *txDriver
+	conn  *conn
 }
 
 func (s *stmt) Exec(args []driver.Value) (driver.Result, error) {
-	s.drv.Lock()
-	defer s.drv.Unlock()
+	s.conn.Lock()
+	defer s.conn.Unlock()
 
-	st, err := s.drv.tx.Prepare(s.query)
+	st, err := s.conn.tx.Prepare(s.query)
 	if err != nil {
 		return nil, err
 	}
@@ -166,11 +180,11 @@ func (s *stmt) Close() error {
 }
 
 func (s *stmt) Query(args []driver.Value) (driver.Rows, error) {
-	s.drv.Lock()
-	defer s.drv.Unlock()
+	s.conn.Lock()
+	defer s.conn.Unlock()
 
 	// create stement
-	st, err := s.drv.tx.Prepare(s.query)
+	st, err := s.conn.tx.Prepare(s.query)
 	if err != nil {
 		return nil, err
 	}

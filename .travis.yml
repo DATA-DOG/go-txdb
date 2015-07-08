@@ -1,34 +1,29 @@
 language: go
 go:
-  - 1.1
-  - 1.2
   - 1.3
   - 1.4
   - release
   - tip
 
-matrix:
-  allow_failures:
-    - go: 1.1
-
 services: mysql
 
 install:
   # mysql database driver for tests
-  - go get stablelib.com/v1/database/mysql
+  - go get github.com/go-sql-driver/mysql
 
   # linters and vet
-  - (go version | grep "go1.1") || go get golang.org/x/tools/cmd/vet
-  - (go version | grep "go1.1") || go get github.com/golang/lint/golint
-
-  - make db
+  - go get golang.org/x/tools/cmd/vet
+  - go get github.com/golang/lint/golint
 
 script:
+  # prepare database
+  - make db
+
   # tests
   - go test -v
   - go test -race
 
   # code correctness, 1.2 version has different fmt version, skip it
-  - (go version | grep -e "go1.[1-2]") || sh -c 'RES="$(go fmt ./...)"; if [ ! -z "$RES" ]; then echo $RES; exit 1; fi'
-  - (go version | grep "go1.1") || sh -c 'RES="$(golint ./...)"; if [ ! -z "$RES" ]; then echo $RES; exit 1; fi'
+  - sh -c 'RES="$(go fmt ./...)"; if [ ! -z "$RES" ]; then echo $RES; exit 1; fi'
+  - sh -c 'RES="$(golint ./...)"; if [ ! -z "$RES" ]; then echo $RES; exit 1; fi'
   - go vet ./...

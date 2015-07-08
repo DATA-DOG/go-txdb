@@ -7,7 +7,7 @@ import (
 	"sync"
 	"testing"
 
-	_ "stablelib.com/v1/database/mysql"
+	_ "github.com/go-sql-driver/mysql"
 )
 
 func init() {
@@ -18,7 +18,7 @@ func init() {
 func TestShouldRunWithinTransaction(t *testing.T) {
 	t.Parallel()
 	var count int
-	db, err := sql.Open("txdb", "")
+	db, err := sql.Open("txdb", "one")
 	if err != nil {
 		t.Fatalf("failed to open a mysql connection, have you run 'make test'? err: %s", err)
 	}
@@ -36,7 +36,7 @@ func TestShouldRunWithinTransaction(t *testing.T) {
 	}
 	db.Close()
 
-	db, err = sql.Open("txdb", "")
+	db, err = sql.Open("txdb", "two")
 	if err != nil {
 		t.Fatalf("failed to reopen a mysql connection: %s", err)
 	}
@@ -48,11 +48,12 @@ func TestShouldRunWithinTransaction(t *testing.T) {
 	if count != 3 {
 		t.Fatalf("expected 3 users to be in database, but got %d", count)
 	}
+	db.Close()
 }
 
 func TestShouldNotHoldConnectionForRows(t *testing.T) {
 	t.Parallel()
-	db, err := sql.Open("txdb", "")
+	db, err := sql.Open("txdb", "three")
 	if err != nil {
 		t.Fatalf("failed to open a mysql connection, have you run 'make test'? err: %s", err)
 	}
@@ -73,14 +74,14 @@ func TestShouldNotHoldConnectionForRows(t *testing.T) {
 func TestShouldPerformParallelActions(t *testing.T) {
 	runtime.GOMAXPROCS(runtime.NumCPU())
 	t.Parallel()
-	db, err := sql.Open("txdb", "")
+	db, err := sql.Open("txdb", "four")
 	if err != nil {
 		t.Fatalf("failed to open a mysql connection, have you run 'make test'? err: %s", err)
 	}
 	defer db.Close()
 
 	wg := &sync.WaitGroup{}
-	for i := 0; i < runtime.NumCPU()-1; i++ {
+	for i := 0; i < 4; i++ {
 		wg.Add(1)
 		go func(d *sql.DB, idx int) {
 			defer wg.Done()
