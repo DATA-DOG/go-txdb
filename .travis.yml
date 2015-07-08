@@ -14,6 +14,9 @@ matrix:
 services: mysql
 
 install:
+  # mysql database driver for tests
+  go get stablelib.com/v1/database/mysql
+
   # linters and vet
   - (go version | grep "go1.1") || go get golang.org/x/tools/cmd/vet
   - (go version | grep "go1.1") || go get github.com/golang/lint/golint

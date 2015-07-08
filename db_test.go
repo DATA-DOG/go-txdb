@@ -7,7 +7,7 @@ import (
 	"sync"
 	"testing"
 
-	_ "github.com/go-sql-driver/mysql"
+	_ "stablelib.com/v1/database/mysql"
 )
 
 func init() {
