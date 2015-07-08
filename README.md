@@ -40,7 +40,8 @@ column.
     }
 
     func main() {
-        db, err := sql.Open("txdb", "") // dsn is not necessary for our tx driver
+        // dsn serves as an unique identifier for connection pool
+        db, err := sql.Open("txdb", "identifier")
         if err != nil {
             log.Fatal(err)
         }

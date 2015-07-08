@@ -36,7 +36,8 @@ Example:
 	}
 
 	func main() {
-		db, err := sql.Open("txdb", "") // dsn is not necessary for our tx driver
+        // dsn serves as an unique identifier for connection pool
+		db, err := sql.Open("txdb", "identifier")
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -70,6 +71,10 @@ import (
 //
 // Use drv and dsn as the standard sql properties for
 // your test database connection to be isolated within transaction.
+//
+// Note: if you open a secondary database, make sure to differianciate
+// the dsn string when opening the sql.DB. The transaction will be
+// isolated within that dsn
 func Register(name, drv, dsn string) {
 	sql.Register(name, &txDriver{
 		dsn:   dsn,
