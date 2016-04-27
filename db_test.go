@@ -109,3 +109,36 @@ func TestShouldPerformParallelActions(t *testing.T) {
 		t.Fatalf("expected 7 users to be in database, but got %d", count)
 	}
 }
+
+func TestShouldHandlePrepare(t *testing.T) {
+	t.Parallel()
+	db, err := sql.Open("txdb", "three")
+	if err != nil {
+		t.Fatalf("failed to open a mysql connection, have you run 'make test'? err: %s", err)
+	}
+	defer db.Close()
+
+	if _, err = db.Prepare("THIS SHOULD FAIL..."); err == nil {
+		t.Fatalf("expected an error, since prepare should validate sql query, but got none")
+	}
+
+	stmt1, err := db.Prepare("SELECT email FROM users WHERE username = ?")
+	if err != nil {
+		t.Fatalf("could not prepare - %s", err)
+	}
+
+	stmt2, err := db.Prepare("INSERT INTO users(username, email) VALUES(?, ?)")
+	if err != nil {
+		t.Fatalf("could not prepare - %s", err)
+	}
+
+	var email string
+	if err = stmt1.QueryRow("jane").Scan(&email); err != nil {
+		t.Fatalf("could not scan email - %s", err)
+	}
+
+	_, err = stmt2.Exec("mark", "mark.spencer@gmail.com")
+	if err != nil {
+		t.Fatalf("should have inserted user - %s", err)
+	}
+}

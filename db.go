@@ -152,7 +152,14 @@ func (c *conn) Rollback() error {
 }
 
 func (c *conn) Prepare(query string) (driver.Stmt, error) {
-	return &stmt{conn: c, query: query}, nil
+	c.Lock()
+	defer c.Unlock()
+
+	st, err := c.tx.Prepare(query)
+	if err == nil {
+		st.Close()
+	}
+	return &stmt{query: query, conn: c}, err
 }
 
 type stmt struct {
