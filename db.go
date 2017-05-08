@@ -166,11 +166,15 @@ func (c *conn) Exec(query string, args []driver.Value) (driver.Result, error) {
 	c.Lock()
 	defer c.Unlock()
 
+	return c.tx.Exec(query, mapArgs(args)...)
+}
+
+func mapArgs(args []driver.Value) []interface{} {
 	var iargs []interface{}
 	for _, arg := range args {
 		iargs = append(iargs, arg)
 	}
-	return c.tx.Exec(query, iargs...)
+	return iargs
 }
 
 func (c *conn) Query(query string, args []driver.Value) (driver.Rows, error) {
@@ -178,40 +182,13 @@ func (c *conn) Query(query string, args []driver.Value) (driver.Rows, error) {
 	defer c.Unlock()
 
 	// query rows
-	var iargs []interface{}
-	for _, arg := range args {
-		iargs = append(iargs, arg)
-	}
-	rs, err := c.tx.Query(query, iargs...)
+	rs, err := c.tx.Query(query, mapArgs(args)...)
 	if err != nil {
 		return nil, err
 	}
 	defer rs.Close()
 
-	// build all rows in memory, prevent statement lock
-	rows := &rows{}
-	rows.cols, err = rs.Columns()
-	if err != nil {
-		return nil, err
-	}
-	for rs.Next() {
-		values := make([]interface{}, len(rows.cols))
-		for i := range values {
-			values[i] = new(interface{})
-		}
-		if err := rs.Scan(values...); err != nil {
-			return rows, err
-		}
-		row := make([]driver.Value, len(rows.cols))
-		for i, v := range values {
-			row[i] = driver.Value(v)
-		}
-		rows.rows = append(rows.rows, row)
-	}
-	if err := rs.Err(); err != nil {
-		return rows, err
-	}
-	return rows, nil
+	return buildRows(rs)
 }
 
 type stmt struct {
@@ -260,4 +237,45 @@ func (r *rows) Next(dest []driver.Value) error {
 
 func (r *rows) Close() error {
 	return nil
+}
+
+func (r *rows) read(rs *sql.Rows) error {
+	var err error
+	r.cols, err = rs.Columns()
+	if err != nil {
+		return err
+	}
+	for rs.Next() {
+		values := make([]interface{}, len(r.cols))
+		for i := range values {
+			values[i] = new(interface{})
+		}
+		if err := rs.Scan(values...); err != nil {
+			return err
+		}
+		row := make([]driver.Value, len(r.cols))
+		for i, v := range values {
+			row[i] = driver.Value(v)
+		}
+		r.rows = append(r.rows, row)
+	}
+	return rs.Err()
+}
+
+type rowSets struct {
+	sets []*rows
+	pos  int
+}
+
+func (rs *rowSets) Columns() []string {
+	return rs.sets[rs.pos].cols
+}
+
+func (rs *rowSets) Close() error {
+	return nil
+}
+
+// advances to next row
+func (rs *rowSets) Next(dest []driver.Value) error {
+	return rs.sets[rs.pos].Next(dest)
 }
