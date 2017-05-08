@@ -162,52 +162,27 @@ func (c *conn) Prepare(query string) (driver.Stmt, error) {
 	return &stmt{query: query, conn: c}, err
 }
 
-type stmt struct {
-	query string
-	conn  *conn
-}
+func (c *conn) Exec(query string, args []driver.Value) (driver.Result, error) {
+	c.Lock()
+	defer c.Unlock()
 
-func (s *stmt) Exec(args []driver.Value) (driver.Result, error) {
-	s.conn.Lock()
-	defer s.conn.Unlock()
-
-	st, err := s.conn.tx.Prepare(s.query)
-	if err != nil {
-		return nil, err
-	}
-	defer st.Close()
 	var iargs []interface{}
 	for _, arg := range args {
 		iargs = append(iargs, arg)
 	}
-	return st.Exec(iargs...)
+	return c.tx.Exec(query, iargs...)
 }
 
-func (s *stmt) NumInput() int {
-	return -1
-}
-
-func (s *stmt) Close() error {
-	return nil
-}
-
-func (s *stmt) Query(args []driver.Value) (driver.Rows, error) {
-	s.conn.Lock()
-	defer s.conn.Unlock()
-
-	// create stement
-	st, err := s.conn.tx.Prepare(s.query)
-	if err != nil {
-		return nil, err
-	}
-	defer st.Close()
+func (c *conn) Query(query string, args []driver.Value) (driver.Rows, error) {
+	c.Lock()
+	defer c.Unlock()
 
 	// query rows
 	var iargs []interface{}
 	for _, arg := range args {
 		iargs = append(iargs, arg)
 	}
-	rs, err := st.Query(iargs...)
+	rs, err := c.tx.Query(query, iargs...)
 	if err != nil {
 		return nil, err
 	}
@@ -237,6 +212,27 @@ func (s *stmt) Query(args []driver.Value) (driver.Rows, error) {
 		return rows, err
 	}
 	return rows, nil
+}
+
+type stmt struct {
+	query string
+	conn  *conn
+}
+
+func (s *stmt) Exec(args []driver.Value) (driver.Result, error) {
+	return s.conn.Exec(s.query, args)
+}
+
+func (s *stmt) NumInput() int {
+	return -1
+}
+
+func (s *stmt) Close() error {
+	return nil
+}
+
+func (s *stmt) Query(args []driver.Value) (driver.Rows, error) {
+	return s.conn.Query(s.query, args)
 }
 
 type rows struct {

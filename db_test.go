@@ -112,7 +112,7 @@ func TestShouldPerformParallelActions(t *testing.T) {
 
 func TestShouldHandlePrepare(t *testing.T) {
 	t.Parallel()
-	db, err := sql.Open("txdb", "three")
+	db, err := sql.Open("txdb", "five")
 	if err != nil {
 		t.Fatalf("failed to open a mysql connection, have you run 'make test'? err: %s", err)
 	}
@@ -140,5 +140,32 @@ func TestShouldHandlePrepare(t *testing.T) {
 	_, err = stmt2.Exec("mark", "mark.spencer@gmail.com")
 	if err != nil {
 		t.Fatalf("should have inserted user - %s", err)
+	}
+}
+
+func TestShouldBeAbleToLockTables(t *testing.T) {
+	db, err := sql.Open("txdb", "locks")
+	if err != nil {
+		t.Fatalf("failed to open a mysql connection, have you run 'make test'? err: %s", err)
+	}
+	defer db.Close()
+
+	_, err = db.Exec("LOCK TABLES users READ")
+	if err != nil {
+		t.Fatalf("should be able to lock table, but got err: %v", err)
+	}
+
+	var count int
+	err = db.QueryRow("SELECT COUNT(*) FROM users").Scan(&count)
+	if err != nil {
+		t.Fatalf("unexpected read error: %v", err)
+	}
+	if count != 3 {
+		t.Fatalf("was expecting 3 users in db")
+	}
+
+	_, err = db.Exec("UNLOCK TABLES")
+	if err != nil {
+		t.Fatalf("should be able to unlock table, but got err: %v", err)
 	}
 }
