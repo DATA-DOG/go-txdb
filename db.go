@@ -166,11 +166,15 @@ func (c *conn) Exec(query string, args []driver.Value) (driver.Result, error) {
 	c.Lock()
 	defer c.Unlock()
 
+	return c.tx.Exec(query, mapArgs(args)...)
+}
+
+func mapArgs(args []driver.Value) []interface{} {
 	var iargs []interface{}
 	for _, arg := range args {
 		iargs = append(iargs, arg)
 	}
-	return c.tx.Exec(query, iargs...)
+	return iargs
 }
 
 func (c *conn) Query(query string, args []driver.Value) (driver.Rows, error) {
@@ -178,11 +182,7 @@ func (c *conn) Query(query string, args []driver.Value) (driver.Rows, error) {
 	defer c.Unlock()
 
 	// query rows
-	var iargs []interface{}
-	for _, arg := range args {
-		iargs = append(iargs, arg)
-	}
-	rs, err := c.tx.Query(query, iargs...)
+	rs, err := c.tx.Query(query, mapArgs(args)...)
 	if err != nil {
 		return nil, err
 	}
