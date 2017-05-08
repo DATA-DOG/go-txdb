@@ -12,7 +12,7 @@ import (
 
 func init() {
 	// we register an sql driver txdb
-	Register("txdb", "mysql", "root@/txdb_test")
+	Register("txdb", "mysql", "root@/txdb_test?multiStatements=true")
 }
 
 func TestShouldRunWithinTransaction(t *testing.T) {

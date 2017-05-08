@@ -18,7 +18,7 @@ func TestShouldGetMultiRowSet(t *testing.T) {
 	}
 	defer db.Close()
 
-	rows, err := db.QueryContext(context.Background(), "SELECT username FROM users; SELECT COUNT(*) FROM users")
+	rows, err := db.QueryContext(context.Background(), "SELECT username FROM users; SELECT COUNT(*) FROM users;")
 	if err != nil {
 		t.Fatalf("failed to query users: %s", err)
 	}

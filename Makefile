@@ -30,4 +30,9 @@ db:
 	@mysql -u root -e 'CREATE DATABASE IF NOT EXISTS `txdb_test`'
 	@mysql -u root txdb_test -e $(SQL)
 
-.PHONY: test db lint
+cover: db
+	go test -race -coverprofile=coverage.txt
+	go tool cover -html=coverage.txt
+	rm coverage.txt
+
+.PHONY: test db lint cover
