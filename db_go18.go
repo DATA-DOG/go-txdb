@@ -91,10 +91,8 @@ func (c *conn) PrepareContext(ctx context.Context, query string) (driver.Stmt, e
 }
 
 // Implement the "Pinger" interface
-// for now we do not have a Ping expectation
-// may be something for the future
 func (c *conn) Ping(ctx context.Context) error {
-	return c.Ping(ctx)
+	return c.drv.db.PingContext(ctx)
 }
 
 // Implement the "StmtExecContext" interface
