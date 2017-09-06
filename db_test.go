@@ -1,7 +1,6 @@
 package txdb
 
 import (
-	"context"
 	"database/sql"
 	"fmt"
 	"runtime"
@@ -168,17 +167,5 @@ func TestShouldBeAbleToLockTables(t *testing.T) {
 	_, err = db.Exec("UNLOCK TABLES")
 	if err != nil {
 		t.Fatalf("should be able to unlock table, but got err: %v", err)
-	}
-}
-
-func TestShouldBeAbleToPingWithContext(t *testing.T) {
-	db, err := sql.Open("txdb", "ping")
-	if err != nil {
-		t.Fatalf("failed to open a mysql connection, have you run 'make test'? err: %s", err)
-	}
-	defer db.Close()
-
-	if err := db.PingContext(context.Background()); err != nil {
-		t.Fatal(err)
 	}
 }

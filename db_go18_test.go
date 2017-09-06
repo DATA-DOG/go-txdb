@@ -50,3 +50,15 @@ func TestShouldGetMultiRowSet(t *testing.T) {
 		t.Fatal("unexpected number of users")
 	}
 }
+
+func TestShouldBeAbleToPingWithContext(t *testing.T) {
+	db, err := sql.Open("txdb", "ping")
+	if err != nil {
+		t.Fatalf("failed to open a mysql connection, have you run 'make test'? err: %s", err)
+	}
+	defer db.Close()
+
+	if err := db.PingContext(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+}
