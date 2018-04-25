@@ -55,7 +55,9 @@ package txdb
 import (
 	"database/sql"
 	"database/sql/driver"
+	"fmt"
 	"io"
+	"strings"
 	"sync"
 )
 
@@ -166,6 +168,11 @@ func (c *conn) Exec(query string, args []driver.Value) (driver.Result, error) {
 	c.Lock()
 	defer c.Unlock()
 
+	err := mysqlImpliedCommit(query)
+	if err != nil {
+		return nil, err
+	}
+
 	return c.tx.Exec(query, mapArgs(args)...)
 }
 
@@ -180,6 +187,11 @@ func mapArgs(args []driver.Value) []interface{} {
 func (c *conn) Query(query string, args []driver.Value) (driver.Rows, error) {
 	c.Lock()
 	defer c.Unlock()
+
+	err := mysqlImpliedCommit(query)
+	if err != nil {
+		return nil, err
+	}
 
 	// query rows
 	rs, err := c.tx.Query(query, mapArgs(args)...)
@@ -197,6 +209,11 @@ type stmt struct {
 }
 
 func (s *stmt) Exec(args []driver.Value) (driver.Result, error) {
+	err := mysqlImpliedCommit(s.query)
+	if err != nil {
+		return nil, err
+	}
+
 	return s.conn.Exec(s.query, args)
 }
 
@@ -209,6 +226,11 @@ func (s *stmt) Close() error {
 }
 
 func (s *stmt) Query(args []driver.Value) (driver.Rows, error) {
+	err := mysqlImpliedCommit(s.query)
+	if err != nil {
+		return nil, err
+	}
+
 	return s.conn.Query(s.query, args)
 }
 
@@ -278,4 +300,75 @@ func (rs *rowSets) Close() error {
 // advances to next row
 func (rs *rowSets) Next(dest []driver.Value) error {
 	return rs.sets[rs.pos].Next(dest)
+}
+
+// https://mariadb.com/kb/en/library/sql-statements-that-cause-an-implicit-commit/
+// https://dev.mysql.com/doc/refman/5.7/en/implicit-commit.html
+func mysqlImpliedCommit(query string) error {
+	lq := strings.ToLower(strings.TrimSpace(query))
+
+	for _, stmt := range commitStatements {
+		// TODO: This is hardly an ideal check.
+		if strings.HasPrefix(lq, stmt) {
+			return fmt.Errorf("statement %q would trigger implicit commit in the query %q",
+				stmt, query)
+		}
+	}
+
+	return nil
+}
+
+var commitStatements = []string{
+	"install plugin",
+	"uninstall plugin",
+	"alter database",
+	"alter event",
+	"alter function",
+	"alter procedure",
+	"alter server",
+	"alter table",
+	"alter view",
+	"analyze table",
+	"begin",
+	"cache index",
+	"change master to",
+	"check table",
+	"create database",
+	"create event",
+	"create function",
+	"create index",
+	"create procedure",
+	"create role",
+	"create server",
+	"create table",
+	"create trigger",
+	"create user",
+	"create view",
+	"drop database",
+	"drop event",
+	"drop function",
+	"drop index",
+	"drop procedure",
+	"drop role",
+	"drop server",
+	"drop table",
+	"drop trigger",
+	"drop user",
+	"drop view",
+	"flush",
+	"grant",
+	"load index into cache",
+	"lock tables",
+	"optimize table",
+	"rename table",
+	"rename user",
+	"repair table",
+	"reset",
+	"revoke",
+	"set password",
+	"shutdown",
+	"start slave",
+	"start transaction",
+	"stop slave",
+	"truncate table",
 }
