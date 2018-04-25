@@ -46,6 +46,11 @@ func (c *conn) QueryContext(ctx context.Context, query string, args []driver.Nam
 	c.Lock()
 	defer c.Unlock()
 
+	err := mysqlImpliedCommit(query)
+	if err != nil {
+		return nil, err
+	}
+
 	vals := make([]driver.Value, len(args))
 	for i, v := range args {
 		vals[i] = v.Value
@@ -65,6 +70,11 @@ func (c *conn) ExecContext(ctx context.Context, query string, args []driver.Name
 	c.Lock()
 	defer c.Unlock()
 
+	err := mysqlImpliedCommit(query)
+	if err != nil {
+		return nil, err
+	}
+
 	vals := make([]driver.Value, len(args))
 	for i, v := range args {
 		vals[i] = v.Value
@@ -83,6 +93,11 @@ func (c *conn) PrepareContext(ctx context.Context, query string) (driver.Stmt, e
 	c.Lock()
 	defer c.Unlock()
 
+	err := mysqlImpliedCommit(query)
+	if err != nil {
+		return nil, err
+	}
+
 	st, err := c.tx.PrepareContext(ctx, query)
 	if err == nil {
 		st.Close()
@@ -97,10 +112,20 @@ func (c *conn) Ping(ctx context.Context) error {
 
 // Implement the "StmtExecContext" interface
 func (s *stmt) ExecContext(ctx context.Context, args []driver.NamedValue) (driver.Result, error) {
+	err := mysqlImpliedCommit(s.query)
+	if err != nil {
+		return nil, err
+	}
+
 	return s.conn.ExecContext(ctx, s.query, args)
 }
 
 // Implement the "StmtQueryContext" interface
 func (s *stmt) QueryContext(ctx context.Context, args []driver.NamedValue) (driver.Rows, error) {
+	err := mysqlImpliedCommit(s.query)
+	if err != nil {
+		return nil, err
+	}
+
 	return s.conn.QueryContext(ctx, s.query, args)
 }
