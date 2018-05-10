@@ -156,10 +156,10 @@ func (c *conn) Prepare(query string) (driver.Stmt, error) {
 	defer c.Unlock()
 
 	st, err := c.tx.Prepare(query)
-	if err == nil {
-		st.Close()
+	if err != nil {
+		return nil, err
 	}
-	return &stmt{query: query, conn: c}, err
+	return &stmt{st: st}, nil
 }
 
 func (c *conn) Exec(query string, args []driver.Value) (driver.Result, error) {
@@ -169,12 +169,12 @@ func (c *conn) Exec(query string, args []driver.Value) (driver.Result, error) {
 	return c.tx.Exec(query, mapArgs(args)...)
 }
 
-func mapArgs(args []driver.Value) []interface{} {
-	var iargs []interface{}
-	for _, arg := range args {
-		iargs = append(iargs, arg)
+func mapArgs(args []driver.Value) (res []interface{}) {
+	res = make([]interface{}, len(args))
+	for i := range args {
+		res[i] = args[i]
 	}
-	return iargs
+	return
 }
 
 func (c *conn) Query(query string, args []driver.Value) (driver.Rows, error) {
@@ -192,12 +192,11 @@ func (c *conn) Query(query string, args []driver.Value) (driver.Rows, error) {
 }
 
 type stmt struct {
-	query string
-	conn  *conn
+	st *sql.Stmt
 }
 
 func (s *stmt) Exec(args []driver.Value) (driver.Result, error) {
-	return s.conn.Exec(s.query, args)
+	return s.st.Exec(mapArgs(args)...)
 }
 
 func (s *stmt) NumInput() int {
@@ -205,11 +204,15 @@ func (s *stmt) NumInput() int {
 }
 
 func (s *stmt) Close() error {
-	return nil
+	return s.st.Close()
 }
 
 func (s *stmt) Query(args []driver.Value) (driver.Rows, error) {
-	return s.conn.Query(s.query, args)
+	rows, err := s.st.Query(mapArgs(args)...)
+	if err != nil {
+		return nil, err
+	}
+	return buildRows(rows)
 }
 
 type rows struct {

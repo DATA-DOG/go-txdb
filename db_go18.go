@@ -84,10 +84,10 @@ func (c *conn) PrepareContext(ctx context.Context, query string) (driver.Stmt, e
 	defer c.Unlock()
 
 	st, err := c.tx.PrepareContext(ctx, query)
-	if err == nil {
-		st.Close()
+	if err != nil {
+		return nil, err
 	}
-	return &stmt{query: query, conn: c}, err
+	return &stmt{st: st}, nil
 }
 
 // Implement the "Pinger" interface
@@ -97,10 +97,22 @@ func (c *conn) Ping(ctx context.Context) error {
 
 // Implement the "StmtExecContext" interface
 func (s *stmt) ExecContext(ctx context.Context, args []driver.NamedValue) (driver.Result, error) {
-	return s.conn.ExecContext(ctx, s.query, args)
+	return s.st.ExecContext(ctx, mapNamedArgs(args)...)
 }
 
 // Implement the "StmtQueryContext" interface
 func (s *stmt) QueryContext(ctx context.Context, args []driver.NamedValue) (driver.Rows, error) {
-	return s.conn.QueryContext(ctx, s.query, args)
+	rows, err := s.st.QueryContext(ctx, mapNamedArgs(args)...)
+	if err != nil {
+		return nil, err
+	}
+	return buildRows(rows)
+}
+
+func mapNamedArgs(args []driver.NamedValue) (res []interface{}) {
+	res = make([]interface{}, len(args))
+	for i := range args {
+		res[i] = args[i].Value
+	}
+	return
 }
