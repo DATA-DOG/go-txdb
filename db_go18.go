@@ -46,12 +46,7 @@ func (c *conn) QueryContext(ctx context.Context, query string, args []driver.Nam
 	c.Lock()
 	defer c.Unlock()
 
-	vals := make([]driver.Value, len(args))
-	for i, v := range args {
-		vals[i] = v.Value
-	}
-
-	rs, err := c.tx.QueryContext(ctx, query, mapArgs(vals)...)
+	rs, err := c.tx.QueryContext(ctx, query, mapNamedArgs(args)...)
 	if err != nil {
 		return nil, err
 	}
@@ -65,12 +60,7 @@ func (c *conn) ExecContext(ctx context.Context, query string, args []driver.Name
 	c.Lock()
 	defer c.Unlock()
 
-	vals := make([]driver.Value, len(args))
-	for i, v := range args {
-		vals[i] = v.Value
-	}
-
-	return c.tx.ExecContext(ctx, query, mapArgs(vals)...)
+	return c.tx.ExecContext(ctx, query, mapNamedArgs(args)...)
 }
 
 // Implement the "ConnBeginTx" interface
@@ -112,7 +102,12 @@ func (s *stmt) QueryContext(ctx context.Context, args []driver.NamedValue) (driv
 func mapNamedArgs(args []driver.NamedValue) (res []interface{}) {
 	res = make([]interface{}, len(args))
 	for i := range args {
-		res[i] = args[i].Value
+		name := args[i].Name
+		if name != "" {
+			res[i] = sql.Named(name, args[i].Value)
+		} else {
+			res[i] = args[i].Value
+		}
 	}
 	return
 }
