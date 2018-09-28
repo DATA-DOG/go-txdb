@@ -69,8 +69,10 @@ import (
 //
 // When Close is called, the transaction is rolled back.
 //
-// Use drv and dsn as the standard sql properties for
+// Use drv (Driver) and dsn (DataSourceName) as the standard sql properties for
 // your test database connection to be isolated within transaction.
+// 
+// The drv and dsn are the same items passed into `sql.Open(drv, dsn)`. 
 //
 // Note: if you open a secondary database, make sure to differianciate
 // the dsn string when opening the sql.DB. The transaction will be
