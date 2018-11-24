@@ -223,7 +223,7 @@ type rows struct {
 	cols []string
 }
 
-func (r *rows) Columns() (cols []string) {
+func (r *rows) Columns() []string {
 	return r.cols
 }
 
