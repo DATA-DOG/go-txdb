@@ -91,7 +91,7 @@ type conn struct {
 	sync.Mutex
 	tx     *sql.Tx
 	dsn    string
-	opened int
+	opened uint
 	drv    *txDriver
 }
 
