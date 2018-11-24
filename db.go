@@ -71,8 +71,8 @@ import (
 //
 // Use drv (Driver) and dsn (DataSourceName) as the standard sql properties for
 // your test database connection to be isolated within transaction.
-// 
-// The drv and dsn are the same items passed into `sql.Open(drv, dsn)`. 
+//
+// The drv and dsn are the same items passed into `sql.Open(drv, dsn)`.
 //
 // Note: if you open a secondary database, make sure to differianciate
 // the dsn string when opening the sql.DB. The transaction will be
@@ -91,7 +91,7 @@ type conn struct {
 	sync.Mutex
 	tx     *sql.Tx
 	dsn    string
-	opened int
+	opened uint
 	drv    *txDriver
 }
 
@@ -223,7 +223,7 @@ type rows struct {
 	cols []string
 }
 
-func (r *rows) Columns() (cols []string) {
+func (r *rows) Columns() []string {
 	return r.cols
 }
 
