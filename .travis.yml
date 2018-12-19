@@ -8,11 +8,15 @@ go:
   - 1.8.x
   - 1.9.x
   - 1.10.x
+  - 1.11.x
 
 services: mysql
 
 install:
   - go get github.com/go-sql-driver/mysql
+
+env:
+  - GO111MODULE=on
 
 script:
   - make db
