@@ -4,7 +4,7 @@ go:
   # - 1.4 - mysql driver does not support
   # - 1.5.x - mysql driver does not support
   # - 1.6.x - mysql driver does not support
-  - 1.7.x
+  # - 1.7.x - mysql driver does not support
   - 1.8.x
   - 1.9.x
   - 1.10.x
