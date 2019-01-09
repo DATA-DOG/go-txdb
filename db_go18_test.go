@@ -6,59 +6,61 @@ import (
 	"context"
 	"database/sql"
 	"testing"
-
-	_ "github.com/go-sql-driver/mysql"
 )
 
 func TestShouldGetMultiRowSet(t *testing.T) {
 	t.Parallel()
-	db, err := sql.Open("txdb", "multiRows")
-	if err != nil {
-		t.Fatalf("failed to open a mysql connection, have you run 'make test'? err: %s", err)
-	}
-	defer db.Close()
-
-	rows, err := db.QueryContext(context.Background(), "SELECT username FROM users; SELECT COUNT(*) FROM users;")
-	if err != nil {
-		t.Fatalf("failed to query users: %s", err)
-	}
-	defer rows.Close()
-
-	var users []string
-	for rows.Next() {
-		var name string
-		if err := rows.Scan(&name); err != nil {
-			t.Fatalf("unexpected row scan err: %v", err)
+	for _, driver := range drivers() {
+		db, err := sql.Open(driver, "multiRows")
+		if err != nil {
+			t.Fatalf(driver+": failed to open a connection, have you run 'make test'? err: %s", err)
 		}
-		users = append(users, name)
-	}
+		defer db.Close()
 
-	if !rows.NextResultSet() {
-		t.Fatal("expected next result set")
-	}
+		rows, err := db.QueryContext(context.Background(), "SELECT username FROM users; SELECT COUNT(*) FROM users;")
+		if err != nil {
+			t.Fatalf(driver+": failed to query users: %s", err)
+		}
+		defer rows.Close()
 
-	if !rows.Next() {
-		t.Fatal("expected next result set - row")
-	}
+		var users []string
+		for rows.Next() {
+			var name string
+			if err := rows.Scan(&name); err != nil {
+				t.Fatalf(driver+": unexpected row scan err: %v", err)
+			}
+			users = append(users, name)
+		}
 
-	var count int
-	if err := rows.Scan(&count); err != nil {
-		t.Fatalf("unexpected row scan err: %v", err)
-	}
+		if !rows.NextResultSet() {
+			t.Fatal(driver + ": expected next result set")
+		}
 
-	if count != len(users) {
-		t.Fatal("unexpected number of users")
+		if !rows.Next() {
+			t.Fatal(driver + ": expected next result set - row")
+		}
+
+		var count int
+		if err := rows.Scan(&count); err != nil {
+			t.Fatalf(driver+": unexpected row scan err: %v", err)
+		}
+
+		if count != len(users) {
+			t.Fatal(driver + ": unexpected number of users")
+		}
 	}
 }
 
 func TestShouldBeAbleToPingWithContext(t *testing.T) {
-	db, err := sql.Open("txdb", "ping")
-	if err != nil {
-		t.Fatalf("failed to open a mysql connection, have you run 'make test'? err: %s", err)
-	}
-	defer db.Close()
+	for _, driver := range drivers() {
+		db, err := sql.Open(driver, "ping")
+		if err != nil {
+			t.Fatalf(driver+": failed to open a connection, have you run 'make test'? err: %s", err)
+		}
+		defer db.Close()
 
-	if err := db.PingContext(context.Background()); err != nil {
-		t.Fatal(err)
+		if err := db.PingContext(context.Background()); err != nil {
+			t.Fatalf(driver+": %v", err)
+		}
 	}
 }

@@ -1,4 +1,4 @@
-define DB_SQL
+define MYSQL_SQL
 CREATE TABLE users (
   id BIGINT UNSIGNED AUTO_INCREMENT NOT NULL,
   username VARCHAR(32) NOT NULL,
@@ -6,33 +6,37 @@ CREATE TABLE users (
   PRIMARY KEY (id),
   UNIQUE INDEX uniq_email (email)
 ) DEFAULT CHARACTER SET utf8 COLLATE utf8_unicode_ci ENGINE = InnoDB;
-
-INSERT INTO users(username, email) VALUES
-  ("gopher", "gopher@go.com"),
-  ("john", "john@doe.com"),
-  ("jane", "jane@doe.com");
 endef
 
-export DB_SQL
+define PSQL_SQL
+CREATE TABLE users (
+  id SERIAL PRIMARY KEY,
+  username VARCHAR(32) NOT NULL,
+  email VARCHAR(255) UNIQUE NOT NULL
+);
+endef
 
-SQL := "$$DB_SQL"
+export MYSQL_SQL
+MYSQL := "$$MYSQL_SQL"
 
-lint:
-	@go fmt ./...
-	@golint ./...
-	@go vet ./...
+export PSQL_SQL
+PSQL := "$$PSQL_SQL"
 
-test: db
-	@go test
+INSERTS := "INSERT INTO users (username, email) VALUES ('gopher', 'gopher@go.com'), ('john', 'john@doe.com'), ('jane', 'jane@doe.com');"
 
-db:
-	@mysql -u root -e 'DROP DATABASE IF EXISTS `txdb_test`'
-	@mysql -u root -e 'CREATE DATABASE IF NOT EXISTS `txdb_test`'
-	@mysql -u root txdb_test -e $(SQL)
+test: mysql psql
+	@go test -race -tags "mysql psql"
 
-cover: db
-	go test -race -coverprofile=coverage.txt
-	go tool cover -html=coverage.txt
-	rm coverage.txt
+mysql:
+	@mysql -u root -e 'DROP DATABASE IF EXISTS txdb_test'
+	@mysql -u root -e 'CREATE DATABASE txdb_test'
+	@mysql -u root txdb_test -e $(MYSQL)
+	@mysql -u root txdb_test -e $(INSERTS)
 
-.PHONY: test db lint cover
+psql:
+	@psql -U postgres -c 'DROP DATABASE IF EXISTS txdb_test'
+	@psql -U postgres -c 'CREATE DATABASE txdb_test'
+	@psql -U postgres txdb_test -c $(PSQL)
+	@psql -U postgres txdb_test -c $(INSERTS)
+
+.PHONY: test mysql psql
