@@ -7,7 +7,6 @@ import (
 	"database/sql/driver"
 )
 
-
 // Implement the NamedValueChecker interface
 func (c *conn) CheckNamedValue(nv *driver.NamedValue) error {
 	switch nv.Value.(type) {
