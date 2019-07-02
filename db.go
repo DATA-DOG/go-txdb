@@ -55,7 +55,10 @@ package txdb
 import (
 	"database/sql"
 	"database/sql/driver"
+	"fmt"
 	"io"
+	"math/rand"
+	"strconv"
 	"sync"
 )
 
@@ -129,6 +132,7 @@ func (d *txDriver) Open(dsn string) (driver.Conn, error) {
 func (c *conn) Close() (err error) {
 	c.drv.Lock()
 	defer c.drv.Unlock()
+
 	c.opened--
 	if c.opened == 0 {
 		err = c.tx.Rollback()
@@ -141,16 +145,37 @@ func (c *conn) Close() (err error) {
 	return
 }
 
+type tx struct {
+	id   string
+	conn *conn
+}
+
 func (c *conn) Begin() (driver.Tx, error) {
-	return c, nil
+	c.Lock()
+	defer c.Unlock()
+
+	id := "tx_" + strconv.Itoa(rand.Int())
+	_, err := c.tx.Exec(fmt.Sprintf(`SAVEPOINT %s`, id))
+	if err != nil {
+		return nil, err
+	}
+	return &tx{id, c}, nil
 }
 
-func (c *conn) Commit() error {
-	return nil
+func (tx *tx) Commit() error {
+	tx.conn.Lock()
+	defer tx.conn.Unlock()
+
+	_, err := tx.conn.tx.Exec(fmt.Sprintf(`RELEASE SAVEPOINT %s`, tx.id))
+	return err
 }
 
-func (c *conn) Rollback() error {
-	return nil
+func (tx *tx) Rollback() error {
+	tx.conn.Lock()
+	defer tx.conn.Unlock()
+
+	_, err := tx.conn.tx.Exec(fmt.Sprintf(`ROLLBACK TO SAVEPOINT %s`, tx.id))
+	return err
 }
 
 func (c *conn) Prepare(query string) (driver.Stmt, error) {

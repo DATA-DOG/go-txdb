@@ -1,0 +1,17 @@
+version: "3"
+
+services:
+  postgres:
+    image: postgres:alpine
+    environment:
+      POSTGRES_DB: txdb_test
+    ports:
+      - 5432:5432
+
+  mysql:
+    image: mysql
+    environment:
+      MYSQL_DATABASE: txdb_test
+      MYSQL_ALLOW_EMPTY_PASSWORD: "true"
+    ports:
+      - 3306:3306

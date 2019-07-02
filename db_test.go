@@ -18,6 +18,107 @@ func drivers() []string {
 	return all
 }
 
+func TestShouldRunWithNestedTransaction(t *testing.T) {
+	t.Parallel()
+	for _, driver := range drivers() {
+		var count int
+		db, err := sql.Open(driver, "five")
+		if err != nil {
+			t.Fatalf(driver+": failed to open a connection, have you run 'make test'? err: %s", err)
+		}
+
+		func(db *sql.DB) {
+			defer db.Close()
+
+			_, err = db.Exec(`INSERT INTO users (username, email) VALUES('txdb', 'txdb@test1.com')`)
+			if err != nil {
+				t.Fatalf(driver+": failed to insert an user: %s", err)
+			}
+			err = db.QueryRow("SELECT COUNT(id) FROM users").Scan(&count)
+			if err != nil {
+				t.Fatalf(driver+": failed to count users: %s", err)
+			}
+			if count != 4 {
+				t.Fatalf(driver+": expected 4 users to be in database, but got %d", count)
+			}
+
+			tx, err := db.Begin()
+			if err != nil {
+				t.Fatalf(driver+": failed to begin transaction: %s", err)
+			}
+			{
+				_, err = tx.Exec(`INSERT INTO users (username, email) VALUES('txdb', 'txdb@test2.com')`)
+				if err != nil {
+					t.Fatalf(driver+": failed to insert an user: %s", err)
+				}
+				err = tx.QueryRow("SELECT COUNT(id) FROM users").Scan(&count)
+				if err != nil {
+					t.Fatalf(driver+": failed to count users: %s", err)
+				}
+				if count != 5 {
+					t.Fatalf(driver+": expected 5 users to be in database, but got %d", count)
+				}
+				if err := tx.Rollback(); err != nil {
+					t.Fatalf(driver+": failed to rollback transaction: %s", err)
+				}
+			}
+
+			err = db.QueryRow("SELECT COUNT(id) FROM users").Scan(&count)
+			if err != nil {
+				t.Fatalf(driver+": failed to count users: %s", err)
+			}
+			if count != 4 {
+				t.Fatalf(driver+": expected 4 users to be in database, but got %d", count)
+			}
+
+			tx, err = db.Begin()
+			if err != nil {
+				t.Fatalf(driver+": failed to begin transaction: %s", err)
+			}
+			{
+				_, err = tx.Exec(`INSERT INTO users (username, email) VALUES('txdb', 'txdb@test2.com')`)
+				if err != nil {
+					t.Fatalf(driver+": failed to insert an user: %s", err)
+				}
+				err = tx.QueryRow("SELECT COUNT(id) FROM users").Scan(&count)
+				if err != nil {
+					t.Fatalf(driver+": failed to count users: %s", err)
+				}
+				if count != 5 {
+					t.Fatalf(driver+": expected 5 users to be in database, but got %d", count)
+				}
+				if err := tx.Commit(); err != nil {
+					t.Fatalf(driver+": failed to commit transaction: %s", err)
+				}
+			}
+
+			err = db.QueryRow("SELECT COUNT(id) FROM users").Scan(&count)
+			if err != nil {
+				t.Fatalf(driver+": failed to count users: %s", err)
+			}
+			if count != 5 {
+				t.Fatalf(driver+": expected 5 users to be in database, but got %d", count)
+			}
+		}(db)
+
+		db, err = sql.Open(driver, "six")
+		if err != nil {
+			t.Fatalf(driver+": failed to reopen a mysql connection: %s", err)
+		}
+		func(db *sql.DB) {
+			defer db.Close()
+
+			err = db.QueryRow("SELECT COUNT(id) FROM users").Scan(&count)
+			if err != nil {
+				t.Fatalf(driver+": failed to count users: %s", err)
+			}
+			if count != 3 {
+				t.Fatalf(driver+": expected 3 users to be in database, but got %d", count)
+			}
+		}(db)
+	}
+}
+
 func TestShouldRunWithinTransaction(t *testing.T) {
 	t.Parallel()
 	for _, driver := range drivers() {
@@ -27,32 +128,37 @@ func TestShouldRunWithinTransaction(t *testing.T) {
 			t.Fatalf(driver+": failed to open a connection, have you run 'make test'? err: %s", err)
 		}
 
-		_, err = db.Exec(`INSERT INTO users (username, email) VALUES('txdb', 'txdb@test.com')`)
-		if err != nil {
-			t.Fatalf(driver+": failed to insert an user: %s", err)
-		}
-		err = db.QueryRow("SELECT COUNT(id) FROM users").Scan(&count)
-		if err != nil {
-			t.Fatalf(driver+": failed to count users: %s", err)
-		}
-		if count != 4 {
-			t.Fatalf(driver+": expected 4 users to be in database, but got %d", count)
-		}
-		db.Close()
+		func(db *sql.DB) {
+			defer db.Close()
+
+			_, err = db.Exec(`INSERT INTO users (username, email) VALUES('txdb', 'txdb@test.com')`)
+			if err != nil {
+				t.Fatalf(driver+": failed to insert an user: %s", err)
+			}
+			err = db.QueryRow("SELECT COUNT(id) FROM users").Scan(&count)
+			if err != nil {
+				t.Fatalf(driver+": failed to count users: %s", err)
+			}
+			if count != 4 {
+				t.Fatalf(driver+": expected 4 users to be in database, but got %d", count)
+			}
+		}(db)
 
 		db, err = sql.Open(driver, "two")
 		if err != nil {
 			t.Fatalf(driver+": failed to reopen a mysql connection: %s", err)
 		}
+		func(db *sql.DB) {
+			defer db.Close()
 
-		err = db.QueryRow("SELECT COUNT(id) FROM users").Scan(&count)
-		if err != nil {
-			t.Fatalf(driver+": failed to count users: %s", err)
-		}
-		if count != 3 {
-			t.Fatalf(driver+": expected 3 users to be in database, but got %d", count)
-		}
-		db.Close()
+			err = db.QueryRow("SELECT COUNT(id) FROM users").Scan(&count)
+			if err != nil {
+				t.Fatalf(driver+": failed to count users: %s", err)
+			}
+			if count != 3 {
+				t.Fatalf(driver+": expected 3 users to be in database, but got %d", count)
+			}
+		}(db)
 	}
 }
 

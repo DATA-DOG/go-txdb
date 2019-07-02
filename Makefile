@@ -28,15 +28,15 @@ test: mysql psql
 	@go test -race -tags "mysql psql"
 
 mysql:
-	@mysql -u root -e 'DROP DATABASE IF EXISTS txdb_test'
-	@mysql -u root -e 'CREATE DATABASE txdb_test'
-	@mysql -u root txdb_test -e $(MYSQL)
-	@mysql -u root txdb_test -e $(INSERTS)
+	@docker-compose exec mysql mysql -h localhost -u root -e 'DROP DATABASE IF EXISTS txdb_test'
+	@docker-compose exec mysql mysql -h localhost -u root -e 'CREATE DATABASE txdb_test'
+	@docker-compose exec mysql mysql -h localhost -u root txdb_test -e $(MYSQL)
+	@docker-compose exec mysql mysql -h localhost -u root txdb_test -e $(INSERTS)
 
 psql:
-	@psql -U postgres -c 'DROP DATABASE IF EXISTS txdb_test'
-	@psql -U postgres -c 'CREATE DATABASE txdb_test'
-	@psql -U postgres txdb_test -c $(PSQL)
-	@psql -U postgres txdb_test -c $(INSERTS)
+	@docker-compose exec postgres psql -U postgres -c 'DROP DATABASE IF EXISTS txdb_test'
+	@docker-compose exec postgres psql -U postgres -c 'CREATE DATABASE txdb_test'
+	@docker-compose exec postgres psql -U postgres txdb_test -c $(PSQL)
+	@docker-compose exec postgres psql -U postgres txdb_test -c $(INSERTS)
 
 .PHONY: test mysql psql

@@ -59,13 +59,12 @@ func (c *conn) QueryContext(ctx context.Context, query string, args []driver.Nam
 func (c *conn) ExecContext(ctx context.Context, query string, args []driver.NamedValue) (driver.Result, error) {
 	c.Lock()
 	defer c.Unlock()
-
 	return c.tx.ExecContext(ctx, query, mapNamedArgs(args)...)
 }
 
 // Implement the "ConnBeginTx" interface
 func (c *conn) BeginTx(ctx context.Context, opts driver.TxOptions) (driver.Tx, error) {
-	return c, nil
+	return c.Begin()
 }
 
 // Implement the "ConnPrepareContext" interface
