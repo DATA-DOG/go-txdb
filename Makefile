@@ -24,19 +24,29 @@ PSQL := "$$PSQL_SQL"
 
 INSERTS := "INSERT INTO users (username, email) VALUES ('gopher', 'gopher@go.com'), ('john', 'john@doe.com'), ('jane', 'jane@doe.com');"
 
+MYSQLCMD=mysql
+ifndef CI
+	MYSQLCMD=docker-compose exec mysql mysql
+endif
+
+PSQLCMD=psql 
+ifndef CI
+	PSQLCMD=docker-compose exec postgres psql
+endif
+
 test: mysql psql
 	@go test -race -tags "mysql psql"
 
 mysql:
-	@docker-compose exec mysql mysql -h localhost -u root -e 'DROP DATABASE IF EXISTS txdb_test'
-	@docker-compose exec mysql mysql -h localhost -u root -e 'CREATE DATABASE txdb_test'
-	@docker-compose exec mysql mysql -h localhost -u root txdb_test -e $(MYSQL)
-	@docker-compose exec mysql mysql -h localhost -u root txdb_test -e $(INSERTS)
+	@$(MYSQLCMD) -h localhost -u root -e 'DROP DATABASE IF EXISTS txdb_test'
+	@$(MYSQLCMD) -h localhost -u root -e 'CREATE DATABASE txdb_test'
+	@$(MYSQLCMD) -h localhost -u root txdb_test -e $(MYSQL)
+	@$(MYSQLCMD) -h localhost -u root txdb_test -e $(INSERTS)
 
 psql:
-	@docker-compose exec postgres psql -U postgres -c 'DROP DATABASE IF EXISTS txdb_test'
-	@docker-compose exec postgres psql -U postgres -c 'CREATE DATABASE txdb_test'
-	@docker-compose exec postgres psql -U postgres txdb_test -c $(PSQL)
-	@docker-compose exec postgres psql -U postgres txdb_test -c $(INSERTS)
+	@$(PSQLCMD) -U postgres -c 'DROP DATABASE IF EXISTS txdb_test'
+	@$(PSQLCMD) -U postgres -c 'CREATE DATABASE txdb_test'
+	@$(PSQLCMD) -U postgres txdb_test -c $(PSQL)
+	@$(PSQLCMD) -U postgres txdb_test -c $(INSERTS)
 
 .PHONY: test mysql psql
