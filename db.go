@@ -57,8 +57,6 @@ import (
 	"database/sql/driver"
 	"fmt"
 	"io"
-	"math/rand"
-	"strconv"
 	"sync"
 )
 
@@ -67,8 +65,13 @@ import (
 // connection.
 //
 // When Open is called any number of times it returns
-// the same transaction connection. Any Begin, Commit calls
-// will not start or close the transaction.
+// the same transaction connection.
+//
+// Any Begin, Commit calls will not start or close the transaction.
+// Instead the savepoint will be created, released or rolled back.
+// In case if your SQL driver does not support save points - use nil
+// for the SavePointOption argument. If driver has non default
+// save point logic, you can override the default with SavePointOption.
 //
 // When Close is called, the transaction is rolled back.
 //
@@ -80,11 +83,12 @@ import (
 // Note: if you open a secondary database, make sure to differianciate
 // the dsn string when opening the sql.DB. The transaction will be
 // isolated within that dsn
-func Register(name, drv, dsn string) {
+func Register(name, drv, dsn string, options ...func(*conn) error) {
 	sql.Register(name, &txDriver{
-		dsn:   dsn,
-		drv:   drv,
-		conns: make(map[string]*conn),
+		dsn:     dsn,
+		drv:     drv,
+		conns:   make(map[string]*conn),
+		options: options,
 	})
 }
 
@@ -92,16 +96,19 @@ func Register(name, drv, dsn string) {
 // when the Close is called, transaction is rolled back
 type conn struct {
 	sync.Mutex
-	tx     *sql.Tx
-	dsn    string
-	opened uint
-	drv    *txDriver
+	tx        *sql.Tx
+	dsn       string
+	opened    uint
+	drv       *txDriver
+	saves     uint
+	savePoint SavePoint
 }
 
 type txDriver struct {
 	sync.Mutex
-	db    *sql.DB
-	conns map[string]*conn
+	db      *sql.DB
+	conns   map[string]*conn
+	options []func(*conn) error
 
 	drv string
 	dsn string
@@ -121,7 +128,13 @@ func (d *txDriver) Open(dsn string) (driver.Conn, error) {
 	}
 	c, ok := d.conns[dsn]
 	if !ok {
-		c = &conn{dsn: dsn, drv: d}
+		c = &conn{dsn: dsn, drv: d, savePoint: &defaultSavePoint{}}
+		for _, opt := range d.options {
+			if e := opt(c); e != nil {
+				return c, e
+			}
+		}
+
 		c.tx, err = d.db.Begin()
 		d.conns[dsn] = c
 	}
@@ -151,11 +164,16 @@ type tx struct {
 }
 
 func (c *conn) Begin() (driver.Tx, error) {
+	if c.savePoint == nil {
+		return &tx{"_", c}, nil // save point is not supported
+	}
+
 	c.Lock()
 	defer c.Unlock()
 
-	id := "tx_" + strconv.Itoa(rand.Int())
-	_, err := c.tx.Exec(fmt.Sprintf(`SAVEPOINT %s`, id))
+	c.saves++
+	id := fmt.Sprintf("tx_%d", c.saves)
+	_, err := c.tx.Exec(c.savePoint.Create(id))
 	if err != nil {
 		return nil, err
 	}
@@ -163,18 +181,26 @@ func (c *conn) Begin() (driver.Tx, error) {
 }
 
 func (tx *tx) Commit() error {
+	if tx.conn.savePoint == nil {
+		return nil // save point is not supported
+	}
+
 	tx.conn.Lock()
 	defer tx.conn.Unlock()
 
-	_, err := tx.conn.tx.Exec(fmt.Sprintf(`RELEASE SAVEPOINT %s`, tx.id))
+	_, err := tx.conn.tx.Exec(tx.conn.savePoint.Release(tx.id))
 	return err
 }
 
 func (tx *tx) Rollback() error {
+	if tx.conn.savePoint == nil {
+		return nil // save point is not supported
+	}
+
 	tx.conn.Lock()
 	defer tx.conn.Unlock()
 
-	_, err := tx.conn.tx.Exec(fmt.Sprintf(`ROLLBACK TO SAVEPOINT %s`, tx.id))
+	_, err := tx.conn.tx.Exec(tx.conn.savePoint.Rollback(tx.id))
 	return err
 }
 

@@ -29,7 +29,7 @@ ifndef CI
 	MYSQLCMD=docker-compose exec mysql mysql
 endif
 
-PSQLCMD=psql 
+PSQLCMD=psql
 ifndef CI
 	PSQLCMD=docker-compose exec postgres psql
 endif
