@@ -118,7 +118,6 @@ func (d *txDriver) Open(dsn string) (driver.Conn, error) {
 	d.Lock()
 	defer d.Unlock()
 	// first open a real database connection
-	var err error
 	if d.db == nil {
 		db, err := sql.Open(d.drv, d.dsn)
 		if err != nil {
@@ -134,26 +133,51 @@ func (d *txDriver) Open(dsn string) (driver.Conn, error) {
 				return c, e
 			}
 		}
-
-		c.tx, err = d.db.Begin()
 		d.conns[dsn] = c
 	}
 	c.opened++
-	return c, err
+	return c, nil
+}
+
+func (d *txDriver) deleteConn(dsn string) error {
+	d.Lock()
+	defer d.Unlock()
+
+	delete(d.conns, dsn)
+	if len(d.conns) == 0 && d.db != nil {
+		if err := d.db.Close(); err != nil {
+			return err
+		}
+		d.db = nil
+	}
+	return nil
+}
+
+func (c *conn) beginOnce() (*sql.Tx, error) {
+	if c.tx == nil {
+		tx, err := c.drv.db.Begin()
+		if err != nil {
+			return nil, err
+		}
+		c.tx = tx
+	}
+	return c.tx, nil
 }
 
 func (c *conn) Close() (err error) {
-	c.drv.Lock()
-	defer c.drv.Unlock()
+	c.Lock()
+	defer c.Unlock()
 
 	c.opened--
 	if c.opened == 0 {
-		err = c.tx.Rollback()
-		if err != nil {
-			return
+		if c.tx != nil {
+			err = c.tx.Rollback()
+			if err != nil {
+				return
+			}
+			c.tx = nil
 		}
-		c.tx = nil
-		delete(c.drv.conns, c.dsn)
+		c.drv.deleteConn(c.dsn)
 	}
 	return
 }
@@ -171,9 +195,14 @@ func (c *conn) Begin() (driver.Tx, error) {
 	c.Lock()
 	defer c.Unlock()
 
+	connTx, err := c.beginOnce()
+	if err != nil {
+		return nil, err
+	}
+
 	c.saves++
 	id := fmt.Sprintf("tx_%d", c.saves)
-	_, err := c.tx.Exec(c.savePoint.Create(id))
+	_, err = connTx.Exec(c.savePoint.Create(id))
 	if err != nil {
 		return nil, err
 	}
@@ -188,7 +217,12 @@ func (tx *tx) Commit() error {
 	tx.conn.Lock()
 	defer tx.conn.Unlock()
 
-	_, err := tx.conn.tx.Exec(tx.conn.savePoint.Release(tx.id))
+	connTx, err := tx.conn.beginOnce()
+	if err != nil {
+		return err
+	}
+
+	_, err = connTx.Exec(tx.conn.savePoint.Release(tx.id))
 	return err
 }
 
@@ -200,7 +234,12 @@ func (tx *tx) Rollback() error {
 	tx.conn.Lock()
 	defer tx.conn.Unlock()
 
-	_, err := tx.conn.tx.Exec(tx.conn.savePoint.Rollback(tx.id))
+	connTx, err := tx.conn.beginOnce()
+	if err != nil {
+		return err
+	}
+
+	_, err = connTx.Exec(tx.conn.savePoint.Rollback(tx.id))
 	return err
 }
 
@@ -208,7 +247,12 @@ func (c *conn) Prepare(query string) (driver.Stmt, error) {
 	c.Lock()
 	defer c.Unlock()
 
-	st, err := c.tx.Prepare(query)
+	tx, err := c.beginOnce()
+	if err != nil {
+		return nil, err
+	}
+
+	st, err := tx.Prepare(query)
 	if err != nil {
 		return nil, err
 	}
@@ -219,7 +263,12 @@ func (c *conn) Exec(query string, args []driver.Value) (driver.Result, error) {
 	c.Lock()
 	defer c.Unlock()
 
-	return c.tx.Exec(query, mapArgs(args)...)
+	tx, err := c.beginOnce()
+	if err != nil {
+		return nil, err
+	}
+
+	return tx.Exec(query, mapArgs(args)...)
 }
 
 func mapArgs(args []driver.Value) (res []interface{}) {
@@ -234,8 +283,13 @@ func (c *conn) Query(query string, args []driver.Value) (driver.Rows, error) {
 	c.Lock()
 	defer c.Unlock()
 
+	tx, err := c.beginOnce()
+	if err != nil {
+		return nil, err
+	}
+
 	// query rows
-	rs, err := c.tx.Query(query, mapArgs(args)...)
+	rs, err := tx.Query(query, mapArgs(args)...)
 	if err != nil {
 		return nil, err
 	}

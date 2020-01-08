@@ -41,12 +41,28 @@ func (rs *rowSets) NextResultSet() error {
 	return nil
 }
 
+func (c *conn) beginTxOnce(ctx context.Context) (*sql.Tx, error) {
+	if c.tx == nil {
+		tx, err := c.drv.db.BeginTx(ctx, &sql.TxOptions{})
+		if err != nil {
+			return nil, err
+		}
+		c.tx = tx
+	}
+	return c.tx, nil
+}
+
 // Implement the "QueryerContext" interface
 func (c *conn) QueryContext(ctx context.Context, query string, args []driver.NamedValue) (driver.Rows, error) {
 	c.Lock()
 	defer c.Unlock()
 
-	rs, err := c.tx.QueryContext(ctx, query, mapNamedArgs(args)...)
+	tx, err := c.beginTxOnce(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	rs, err := tx.QueryContext(ctx, query, mapNamedArgs(args)...)
 	if err != nil {
 		return nil, err
 	}
@@ -59,7 +75,13 @@ func (c *conn) QueryContext(ctx context.Context, query string, args []driver.Nam
 func (c *conn) ExecContext(ctx context.Context, query string, args []driver.NamedValue) (driver.Result, error) {
 	c.Lock()
 	defer c.Unlock()
-	return c.tx.ExecContext(ctx, query, mapNamedArgs(args)...)
+
+	tx, err := c.beginTxOnce(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return tx.ExecContext(ctx, query, mapNamedArgs(args)...)
 }
 
 // Implement the "ConnBeginTx" interface
@@ -72,7 +94,12 @@ func (c *conn) PrepareContext(ctx context.Context, query string) (driver.Stmt, e
 	c.Lock()
 	defer c.Unlock()
 
-	st, err := c.tx.PrepareContext(ctx, query)
+	tx, err := c.beginTxOnce(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	st, err := tx.PrepareContext(ctx, query)
 	if err != nil {
 		return nil, err
 	}

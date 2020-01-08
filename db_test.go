@@ -282,3 +282,102 @@ func TestShouldHandlePrepare(t *testing.T) {
 		}
 	}
 }
+
+func TestShouldCloseRootDB(t *testing.T) {
+	for _, driver := range drivers() {
+		db1, err := sql.Open(driver, "first")
+		if err != nil {
+			t.Fatalf(driver+": failed to open a connection, have you run 'make test'? err: %s", err)
+		}
+		defer db1.Close()
+
+		stmt, err := db1.Prepare("SELECT * FROM users")
+		if err != nil {
+			t.Fatalf(driver+": could not prepare - %s", err)
+		}
+		defer stmt.Close()
+
+		drv1 := db1.Driver().(*txDriver)
+		if drv1.db == nil {
+			t.Fatalf(driver+": expected database, drv1.db: %v", drv1.db)
+		}
+
+		db2, err := sql.Open(driver, "second")
+		if err != nil {
+			t.Fatalf(driver+": failed to open a connection, have you run 'make test'? err: %s", err)
+		}
+		defer db2.Close()
+
+		stmt, err = db2.Prepare("SELECT * FROM users")
+		if err != nil {
+			t.Fatalf(driver+": could not prepare - %s", err)
+		}
+		defer stmt.Close()
+
+		// Both drivers share the same database.
+		drv2 := db2.Driver().(*txDriver)
+		if drv2.db != drv1.db {
+			t.Fatalf(driver+": drv1.db=%v != drv2.db=%v", drv1.db, drv2.db)
+		}
+
+		// Database should remain open while a connection is open.
+		if err := db1.Close(); err != nil {
+			t.Fatalf(driver+": could not close database - %s", err)
+		}
+
+		if drv1.db == nil {
+			t.Fatal(driver + ": expected database, not nil")
+		}
+
+		if drv2.db == nil {
+			t.Fatal(driver + ": expected database ,not nil")
+		}
+
+		// Database should close after last connection is closed.
+		if err := db2.Close(); err != nil {
+			t.Fatalf(driver+": could not close database - %s", err)
+		}
+
+		if drv1.db != nil {
+			t.Fatalf(driver+": expected closed database, not %v", drv1.db)
+		}
+
+		if drv2.db != nil {
+			t.Fatalf(driver+": expected closed database, not %v", drv2.db)
+		}
+	}
+}
+
+func TestShouldReopenAfterClose(t *testing.T) {
+	for _, driver := range drivers() {
+		db, err := sql.Open(driver, "first")
+		if err != nil {
+			t.Fatalf(driver+": failed to open a connection, have you run 'make test'? err: %s", err)
+		}
+		defer db.Close()
+
+		stmt, err := db.Prepare("SELECT * FROM users")
+		if err != nil {
+			t.Fatalf(driver+": could not prepare - %s", err)
+		}
+		defer stmt.Close()
+
+		if err := db.Close(); err != nil {
+			t.Fatalf(driver+": could not close database - %s", err)
+		}
+
+		if err := db.Ping(); err.Error() != "sql: database is closed" {
+			t.Fatalf(driver+": expected closed database - %s", err)
+		}
+
+		db, err = sql.Open(driver, "second")
+		if err != nil {
+			t.Fatalf(driver+": failed to open a connection, have you run 'make test'? err: %s", err)
+		}
+		defer db.Close()
+
+		if err := db.Ping(); err != nil {
+			t.Fatalf(driver+": failed to ping, have you run 'make test'? err: %s", err)
+		}
+	}
+}
