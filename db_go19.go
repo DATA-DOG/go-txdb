@@ -9,6 +9,10 @@ import (
 
 // Implement the NamedValueChecker interface
 func (c *conn) CheckNamedValue(nv *driver.NamedValue) error {
+	if nvc, ok := c.drv.realConn.(driver.NamedValueChecker); ok {
+		return nvc.CheckNamedValue(nv)
+	}
+
 	switch nv.Value.(type) {
 	case sql.Out:
 		return nil
