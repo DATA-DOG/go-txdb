@@ -106,9 +106,10 @@ type conn struct {
 
 type txDriver struct {
 	sync.Mutex
-	db      *sql.DB
-	conns   map[string]*conn
-	options []func(*conn) error
+	db       *sql.DB
+	realConn driver.Conn // Meant to be used as NamedValueChecker
+	conns    map[string]*conn
+	options  []func(*conn) error
 
 	drv string
 	dsn string
@@ -124,6 +125,12 @@ func (d *txDriver) Open(dsn string) (driver.Conn, error) {
 			return nil, err
 		}
 		d.db = db
+
+		realConn, err := db.Driver().Open(d.dsn)
+		if err != nil {
+			return nil, err
+		}
+		d.realConn = realConn
 	}
 	c, ok := d.conns[dsn]
 	if !ok {
