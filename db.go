@@ -156,6 +156,9 @@ func (d *txDriver) deleteConn(dsn string) error {
 			return err
 		}
 		d.db = nil
+		if err := d.realConn.Close(); err != nil {
+			return err
+		}
 	}
 	return nil
 }
