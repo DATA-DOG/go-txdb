@@ -333,13 +333,18 @@ func (s *stmt) Query(args []driver.Value) (driver.Rows, error) {
 }
 
 type rows struct {
-	rows [][]driver.Value
-	pos  int
-	cols []string
+	rows     [][]driver.Value
+	pos      int
+	cols     []string
+	colTypes []*sql.ColumnType
 }
 
 func (r *rows) Columns() []string {
 	return r.cols
+}
+
+func (r *rows) ColumnTypeDatabaseTypeName(index int) string {
+	return r.colTypes[index].DatabaseTypeName()
 }
 
 func (r *rows) Next(dest []driver.Value) error {
@@ -365,6 +370,12 @@ func (r *rows) read(rs *sql.Rows) error {
 	if err != nil {
 		return err
 	}
+
+	r.colTypes, err = rs.ColumnTypes()
+	if err != nil {
+		return err
+	}
+
 	for rs.Next() {
 		values := make([]interface{}, len(r.cols))
 		for i := range values {
@@ -389,6 +400,10 @@ type rowSets struct {
 
 func (rs *rowSets) Columns() []string {
 	return rs.sets[rs.pos].cols
+}
+
+func (rs *rowSets) ColumnTypeDatabaseTypeName(index int) string {
+	return rs.sets[rs.pos].ColumnTypeDatabaseTypeName(index)
 }
 
 func (rs *rowSets) Close() error {
