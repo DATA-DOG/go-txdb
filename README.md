@@ -57,11 +57,14 @@ Every time you will run this application, it will remain in the same state as be
 
 ### Testing
 
-Usage is mainly intended for testing purposes. See the **db_test.go** as an example.
+Usage is mainly intended for testing purposes. See the **db_test.go** as
+an example. In order to run tests, you will need docker and
+docker-compose:
 
-In order to run tests, you need a mysql database with a root access without password locally.
-
+    docker-compose up
     make test
+
+The tests are currently using `postgres` and `mysql` databases
 
 ### Documentation
 
@@ -80,6 +83,6 @@ The public API is locked since it is an **sql.Driver** and will not change.
 
 **txdb** is licensed under the [three clause BSD license][license]
 
-[godoc]: http://godoc.org/github.com/DATA-DOG/go-txdb "Documentation on godoc"
-[golang]: https://golang.org/  "GO programming language"
-[license]: http://en.wikipedia.org/wiki/BSD_licenses "The three clause BSD license"
+[godoc]: http://godoc.org/github.com/DATA-DOG/go-txdb "Documentation on
+godoc" [golang]: https://golang.org/  "GO programming language" [license]:
+http://en.wikipedia.org/wiki/BSD_licenses "The three clause BSD license"
