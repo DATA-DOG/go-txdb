@@ -84,5 +84,8 @@ The public API is locked since it is an **sql.Driver** and will not change.
 **txdb** is licensed under the [three clause BSD license][license]
 
 [godoc]: http://godoc.org/github.com/DATA-DOG/go-txdb "Documentation on
-godoc" [golang]: https://golang.org/  "GO programming language" [license]:
-http://en.wikipedia.org/wiki/BSD_licenses "The three clause BSD license"
+godoc"
+
+[golang]: https://golang.org/  "GO programming language"
+
+[license]:http://en.wikipedia.org/wiki/BSD_licenses "The three clause BSD license"
