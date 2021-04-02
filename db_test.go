@@ -2,10 +2,12 @@ package txdb
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 func drivers() []string {
@@ -379,5 +381,57 @@ func TestShouldReopenAfterClose(t *testing.T) {
 		if err := db.Ping(); err != nil {
 			t.Fatalf(driver+": failed to ping, have you run 'make test'? err: %s", err)
 		}
+	}
+}
+
+type canceledContext struct{}
+
+func (canceledContext) Deadline() (deadline time.Time, ok bool) { return time.Time{}, true }
+func (canceledContext) Done() <-chan struct{} {
+	done := make(chan struct{}, 0)
+	close(done)
+	return done
+}
+func (canceledContext) Err() error                        { return errors.New("canceled") }
+func (canceledContext) Value(key interface{}) interface{} { return nil }
+
+func TestShouldDiscardConnectionWhenClosedBecauseOfError(t *testing.T) {
+	for _, driver := range drivers() {
+		t.Run(fmt.Sprintf("using driver %s", driver), func(t *testing.T) {
+			{
+				db, err := sql.Open(driver, "first")
+				if err != nil {
+					t.Fatalf(driver+": failed to open a connection, have you run 'make test'? err: %s", err)
+				}
+				defer db.Close()
+
+				tx, err := db.Begin()
+				defer tx.Rollback()
+				if err != nil {
+					t.Fatalf(driver+": failed to begin transaction err: %s", err)
+				}
+
+				// TODO: we somehow need to poison the DB connection here so that Rollback fails
+
+				_, err = tx.PrepareContext(canceledContext{}, "SELECT * FROM users")
+				if err == nil {
+					t.Fatalf(driver + ": should have returned error for prepare")
+				}
+			}
+
+			fmt.Println("Opening db...")
+
+			{
+				db, err := sql.Open(driver, "second")
+				if err != nil {
+					t.Fatalf(driver+": failed to open a connection, have you run 'make test'? err: %s", err)
+				}
+				defer db.Close()
+
+				if err := db.Ping(); err != nil {
+					t.Fatalf(driver+": failed to ping, have you run 'make test'? err: %s", err)
+				}
+			}
+		})
 	}
 }

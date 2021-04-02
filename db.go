@@ -181,10 +181,7 @@ func (c *conn) Close() (err error) {
 	c.opened--
 	if c.opened == 0 {
 		if c.tx != nil {
-			err = c.tx.Rollback()
-			if err != nil {
-				return
-			}
+			c.tx.Rollback()
 			c.tx = nil
 		}
 		c.drv.deleteConn(c.dsn)
