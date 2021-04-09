@@ -54,6 +54,7 @@ Every time you will run this application, it will remain in the same state as be
 package txdb
 
 import (
+	"context"
 	"database/sql"
 	"database/sql/driver"
 	"fmt"
@@ -61,6 +62,17 @@ import (
 	"reflect"
 	"sync"
 )
+
+// New returns a driver.Connector, which can be passed to sql.OpenDB. This can
+// be used in place of Register. It takes the same arguments as Register.
+func New(drv, dsn string, options ...func(*conn) error) driver.Connector {
+	return &TxDriver{
+		dsn:     dsn,
+		drv:     drv,
+		conns:   make(map[string]*conn),
+		options: options,
+	}
+}
 
 // Register a txdb sql driver under the given sql driver name
 // which can be used to open a single transaction based database
@@ -118,6 +130,19 @@ type TxDriver struct {
 
 	drv string
 	dsn string
+}
+
+// Connect satisfies the driver.Connector interface.
+func (d *TxDriver) Connect(context.Context) (driver.Conn, error) {
+	// The DSN passed here doesn't matter, since it's only used to disambiguate
+	// connections, but that disambiguation happens in the call to New() when
+	// used through the driver.Connector interface.
+	return d.Open("connector")
+}
+
+// Driver satisfies the driver.Connector interface.
+func (d *TxDriver) Driver() driver.Driver {
+	return d
 }
 
 func (d *TxDriver) DB() *sql.DB {
