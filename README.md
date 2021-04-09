@@ -24,33 +24,56 @@ Given, you have a mysql database called **txdb_test** and a table **users** with
 column.
 
 ``` go
-    package main
+package main
 
-    import (
-        "database/sql"
-        "log"
+import (
+    "database/sql"
+    "log"
 
-        "github.com/DATA-DOG/go-txdb"
-        _ "github.com/go-sql-driver/mysql"
-    )
+    "github.com/DATA-DOG/go-txdb"
+    _ "github.com/go-sql-driver/mysql"
+)
 
-    func init() {
-        // we register an sql driver named "txdb"
-        txdb.Register("txdb", "mysql", "root@/txdb_test")
+func init() {
+    // we register an sql driver named "txdb"
+    txdb.Register("txdb", "mysql", "root@/txdb_test")
+}
+
+func main() {
+    // dsn serves as an unique identifier for connection pool
+    db, err := sql.Open("txdb", "identifier")
+    if err != nil {
+        log.Fatal(err)
     }
+    defer db.Close()
 
-    func main() {
-        // dsn serves as an unique identifier for connection pool
-        db, err := sql.Open("txdb", "identifier")
-        if err != nil {
-            log.Fatal(err)
-        }
-        defer db.Close()
-
-        if _, err := db.Exec(`INSERT INTO users(username) VALUES("gopher")`); err != nil {
-            log.Fatal(err)
-        }
+    if _, err := db.Exec(`INSERT INTO users(username) VALUES("gopher")`); err != nil {
+        log.Fatal(err)
     }
+}
+```
+
+You can also use [`sql.OpenDB`](https://golang.org/pkg/database/sql/#OpenDB) (added in Go 1.10) rather than registering a txdb driver instance, if you prefer:
+
+``` go
+package main
+
+import (
+    "database/sql"
+    "log"
+
+    "github.com/DATA-DOG/go-txdb"
+    _ "github.com/go-sql-driver/mysql"
+)
+
+func main() {
+    db := sql.OpenDB(txdb.New("mysql", "root@/txdb_test"))
+    defer db.Close()
+
+    if _, err := db.Exec(`INSERT INTO users(username) VALUES("gopher")`); err != nil {
+        log.Fatal(err)
+    }
+}
 ```
 
 Every time you will run this application, it will remain in the same state as before.
