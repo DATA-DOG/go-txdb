@@ -142,6 +142,8 @@ func (d *txDriver) Open(dsn string) (driver.Conn, error) {
 		}
 		d.conns[dsn] = c
 	}
+	c.Lock()
+	defer c.Unlock()
 	c.opened++
 	return c, nil
 }
