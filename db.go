@@ -142,16 +142,12 @@ func (d *txDriver) Open(dsn string) (driver.Conn, error) {
 		}
 		d.conns[dsn] = c
 	}
-	c.Lock()
-	defer c.Unlock()
-	c.opened++
+	c.opened++ // safe since conn.Close() must acquire driver lock first
 	return c, nil
 }
 
 func (d *txDriver) deleteConn(dsn string) error {
-	d.Lock()
-	defer d.Unlock()
-
+	// d must be locked before call
 	delete(d.conns, dsn)
 	if len(d.conns) == 0 && d.db != nil {
 		if err := d.db.Close(); err != nil {
@@ -177,8 +173,8 @@ func (c *conn) beginOnce() (*sql.Tx, error) {
 }
 
 func (c *conn) Close() (err error) {
-	c.Lock()
-	defer c.Unlock()
+	c.drv.Lock()
+	defer c.drv.Unlock()
 
 	c.opened--
 	if c.opened == 0 {
