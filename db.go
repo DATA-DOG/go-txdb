@@ -57,6 +57,7 @@ import (
 	"database/sql/driver"
 	"fmt"
 	"io"
+	"reflect"
 	"sync"
 )
 
@@ -399,6 +400,10 @@ func (rs *rowSets) Columns() []string {
 
 func (rs *rowSets) ColumnTypeDatabaseTypeName(index int) string {
 	return rs.sets[rs.pos].ColumnTypeDatabaseTypeName(index)
+}
+
+func (rs *rowSets) ColumnTypeScanType(index int) reflect.Type {
+	return rs.sets[rs.pos].colTypes[index].ScanType()
 }
 
 func (rs *rowSets) Close() error {
