@@ -41,14 +41,26 @@ func (rs *rowSets) NextResultSet() error {
 	return nil
 }
 
-func (c *conn) beginTxOnce(ctx context.Context) (*sql.Tx, error) {
+func (c *conn) beginTxOnce(ctx context.Context, done <-chan struct{}) (*sql.Tx, error) {
 	if c.tx == nil {
-		tx, err := c.drv.db.BeginTx(ctx, &sql.TxOptions{})
+		rootCtx, cancel := context.WithCancel(context.Background())
+		tx, err := c.drv.db.BeginTx(rootCtx, &sql.TxOptions{})
 		if err != nil {
+			cancel()
 			return nil, err
 		}
-		c.tx = tx
+		c.tx, c.ctx, c.cancel = tx, rootCtx, cancel
 	}
+	go func() {
+		select {
+		case <-ctx.Done():
+			// operation was interrupted by context cancel, so we cancel parent as well
+			c.cancel()
+		case <-done:
+			// operation was successfully finished, so we don't close ctx on tx
+		case <-c.ctx.Done():
+		}
+	}()
 	return c.tx, nil
 }
 
@@ -57,7 +69,10 @@ func (c *conn) QueryContext(ctx context.Context, query string, args []driver.Nam
 	c.Lock()
 	defer c.Unlock()
 
-	tx, err := c.beginTxOnce(ctx)
+	done := make(chan struct{})
+	defer close(done)
+
+	tx, err := c.beginTxOnce(ctx, done)
 	if err != nil {
 		return nil, err
 	}
@@ -76,7 +91,10 @@ func (c *conn) ExecContext(ctx context.Context, query string, args []driver.Name
 	c.Lock()
 	defer c.Unlock()
 
-	tx, err := c.beginTxOnce(ctx)
+	done := make(chan struct{})
+	defer close(done)
+
+	tx, err := c.beginTxOnce(ctx, done)
 	if err != nil {
 		return nil, err
 	}
@@ -94,7 +112,10 @@ func (c *conn) PrepareContext(ctx context.Context, query string) (driver.Stmt, e
 	c.Lock()
 	defer c.Unlock()
 
-	tx, err := c.beginTxOnce(ctx)
+	done := make(chan struct{})
+	defer close(done)
+
+	tx, err := c.beginTxOnce(ctx, done)
 	if err != nil {
 		return nil, err
 	}
@@ -103,7 +124,18 @@ func (c *conn) PrepareContext(ctx context.Context, query string) (driver.Stmt, e
 	if err != nil {
 		return nil, err
 	}
-	return &stmt{st: st}, nil
+
+	stmtFailedStr := make(chan bool)
+	go func() {
+		select {
+		case <-c.ctx.Done():
+		case erred := <-stmtFailedStr:
+			if erred {
+				c.cancel()
+			}
+		}
+	}()
+	return &stmt{st: st, done: stmtFailedStr}, nil
 }
 
 // Implement the "Pinger" interface
@@ -113,13 +145,18 @@ func (c *conn) Ping(ctx context.Context) error {
 
 // Implement the "StmtExecContext" interface
 func (s *stmt) ExecContext(ctx context.Context, args []driver.NamedValue) (driver.Result, error) {
-	return s.st.ExecContext(ctx, mapNamedArgs(args)...)
+	dr, err := s.st.ExecContext(ctx, mapNamedArgs(args)...)
+	if err != nil {
+		s.closeDone(true)
+	}
+	return dr, err
 }
 
 // Implement the "StmtQueryContext" interface
 func (s *stmt) QueryContext(ctx context.Context, args []driver.NamedValue) (driver.Rows, error) {
 	rows, err := s.st.QueryContext(ctx, mapNamedArgs(args)...)
 	if err != nil {
+		s.closeDone(true)
 		return nil, err
 	}
 	return buildRows(rows)
