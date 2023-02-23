@@ -103,6 +103,9 @@ type conn struct {
 	drv       *txDriver
 	saves     uint
 	savePoint SavePoint
+
+	cancel func()
+	ctx    interface{ Done() <-chan struct{} }
 }
 
 type txDriver struct {
@@ -135,7 +138,13 @@ func (d *txDriver) Open(dsn string) (driver.Conn, error) {
 	}
 	c, ok := d.conns[dsn]
 	if !ok {
-		c = &conn{dsn: dsn, drv: d, savePoint: &defaultSavePoint{}}
+		c = &conn{
+			dsn:       dsn,
+			drv:       d,
+			savePoint: &defaultSavePoint{},
+			cancel:    func() {},
+			ctx:       stubCtx{},
+		}
 		for _, opt := range d.options {
 			if e := opt(c); e != nil {
 				return c, e
@@ -181,6 +190,7 @@ func (c *conn) Close() (err error) {
 	if c.opened == 0 {
 		if c.tx != nil {
 			c.tx.Rollback()
+			c.cancel()
 			c.tx = nil
 		}
 		c.drv.deleteConn(c.dsn)
@@ -305,11 +315,17 @@ func (c *conn) Query(query string, args []driver.Value) (driver.Rows, error) {
 }
 
 type stmt struct {
-	st *sql.Stmt
+	mu   sync.Mutex
+	st   *sql.Stmt
+	done chan bool
 }
 
 func (s *stmt) Exec(args []driver.Value) (driver.Result, error) {
-	return s.st.Exec(mapArgs(args)...)
+	dr, err := s.st.Exec(mapArgs(args)...)
+	if err != nil {
+		s.closeDone(true)
+	}
+	return dr, err
 }
 
 func (s *stmt) NumInput() int {
@@ -317,15 +333,33 @@ func (s *stmt) NumInput() int {
 }
 
 func (s *stmt) Close() error {
+	s.closeDone(false)
 	return s.st.Close()
 }
 
 func (s *stmt) Query(args []driver.Value) (driver.Rows, error) {
 	rows, err := s.st.Query(mapArgs(args)...)
 	if err != nil {
+		s.closeDone(true)
 		return nil, err
 	}
 	return buildRows(rows)
+}
+
+func (s *stmt) closeDone(withErr bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.done == nil {
+		return
+	}
+
+	select {
+	case s.done <- withErr:
+	default:
+	}
+
+	close(s.done)
+	s.done = nil
 }
 
 type rows struct {
@@ -413,4 +447,10 @@ func (rs *rowSets) Close() error {
 // advances to next row
 func (rs *rowSets) Next(dest []driver.Value) error {
 	return rs.sets[rs.pos].Next(dest)
+}
+
+type stubCtx struct{}
+
+func (s stubCtx) Done() <-chan struct{} {
+	return nil
 }
