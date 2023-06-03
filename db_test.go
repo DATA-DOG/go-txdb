@@ -1,21 +1,37 @@
-package txdb
+package txdb_test
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
+	"reflect"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/DATA-DOG/go-txdb"
+
+	_ "github.com/go-sql-driver/mysql"
+	_ "github.com/lib/pq"
 )
+
+var txDrivers = []struct {
+	name   string
+	driver string
+	dsn    string
+}{
+	{name: "mysql_txdb", driver: "mysql", dsn: "root:pass@/txdb_test?multiStatements=true"},
+	{name: "psql_txdb", driver: "postgres", dsn: "postgres://postgres:pass@localhost/txdb_test?sslmode=disable"},
+}
 
 func drivers() []string {
 	var all []string
-	for _, d := range sql.Drivers() {
-		if strings.Index(d, "_txdb") != -1 {
-			all = append(all, d)
-		}
+	for _, d := range txDrivers {
+		txdb.Register(d.name, d.driver, d.dsn)
+		all = append(all, d.name)
 	}
 	return all
 }
@@ -202,7 +218,7 @@ func TestShouldPerformParallelActions(t *testing.T) {
 				defer wg.Done()
 				rows, err := d.Query("SELECT username FROM users")
 				if err != nil {
-					t.Fatalf(driver+": failed to query users: %s", err)
+					t.Errorf(driver+": failed to query users: %s", err)
 				}
 				defer rows.Close()
 
@@ -214,7 +230,7 @@ func TestShouldPerformParallelActions(t *testing.T) {
 				email := fmt.Sprintf("parallel%d@test.com", idx)
 				_, err = d.Exec(insertSQL, username, email)
 				if err != nil {
-					t.Fatalf(driver+": failed to insert an user: %s", err)
+					t.Errorf(driver+": failed to insert an user: %s", err)
 				}
 			}(db, i)
 		}
@@ -299,9 +315,9 @@ func TestShouldCloseRootDB(t *testing.T) {
 		}
 		defer stmt.Close()
 
-		drv1 := db1.Driver().(*txDriver)
-		if drv1.db == nil {
-			t.Fatalf(driver+": expected database, drv1.db: %v", drv1.db)
+		drv1 := db1.Driver().(*txdb.TxDriver)
+		if drv1.DB() == nil {
+			t.Fatalf(driver+": expected database, drv1.db: %v", drv1.DB())
 		}
 
 		db2, err := sql.Open(driver, "second")
@@ -317,9 +333,9 @@ func TestShouldCloseRootDB(t *testing.T) {
 		defer stmt.Close()
 
 		// Both drivers share the same database.
-		drv2 := db2.Driver().(*txDriver)
-		if drv2.db != drv1.db {
-			t.Fatalf(driver+": drv1.db=%v != drv2.db=%v", drv1.db, drv2.db)
+		drv2 := db2.Driver().(*txdb.TxDriver)
+		if drv2.DB() != drv1.DB() {
+			t.Fatalf(driver+": drv1.db=%v != drv2.db=%v", drv1.DB(), drv2.DB())
 		}
 
 		// Database should remain open while a connection is open.
@@ -327,11 +343,11 @@ func TestShouldCloseRootDB(t *testing.T) {
 			t.Fatalf(driver+": could not close database - %s", err)
 		}
 
-		if drv1.db == nil {
+		if drv1.DB() == nil {
 			t.Fatal(driver + ": expected database, not nil")
 		}
 
-		if drv2.db == nil {
+		if drv2.DB() == nil {
 			t.Fatal(driver + ": expected database ,not nil")
 		}
 
@@ -340,12 +356,12 @@ func TestShouldCloseRootDB(t *testing.T) {
 			t.Fatalf(driver+": could not close database - %s", err)
 		}
 
-		if drv1.db != nil {
-			t.Fatalf(driver+": expected closed database, not %v", drv1.db)
+		if drv1.DB() != nil {
+			t.Fatalf(driver+": expected closed database, not %v", drv1.DB())
 		}
 
-		if drv2.db != nil {
-			t.Fatalf(driver+": expected closed database, not %v", drv2.db)
+		if drv2.DB() != nil {
+			t.Fatalf(driver+": expected closed database, not %v", drv2.DB())
 		}
 	}
 }
@@ -388,7 +404,7 @@ type canceledContext struct{}
 
 func (canceledContext) Deadline() (deadline time.Time, ok bool) { return time.Time{}, true }
 func (canceledContext) Done() <-chan struct{} {
-	done := make(chan struct{}, 0)
+	done := make(chan struct{})
 	close(done)
 	return done
 }
@@ -406,7 +422,12 @@ func TestShouldDiscardConnectionWhenClosedBecauseOfError(t *testing.T) {
 				defer db.Close()
 
 				tx, err := db.Begin()
-				defer tx.Rollback()
+				defer func() {
+					err = tx.Rollback()
+					if err != nil {
+						t.Fatalf(driver+": rollback err: %s", err)
+					}
+				}()
 				if err != nil {
 					t.Fatalf(driver+": failed to begin transaction err: %s", err)
 				}
@@ -432,6 +453,205 @@ func TestShouldDiscardConnectionWhenClosedBecauseOfError(t *testing.T) {
 					t.Fatalf(driver+": failed to ping, have you run 'make test'? err: %s", err)
 				}
 			}
+		})
+	}
+}
+
+func TestPostgresRowsScanTypeTables(t *testing.T) {
+	db, err := sql.Open("psql_txdb", "scantype")
+	if err != nil {
+		t.Fatalf("psql: failed to open a postgres connection, have you run 'make test'? err: %s", err)
+	}
+	defer db.Close()
+
+	rows, err := db.Query("SELECT 1")
+	if err != nil {
+		t.Fatalf("psql: unable to execute trivial query: %v", err)
+	}
+
+	colTypes, err := rows.ColumnTypes()
+	if err != nil {
+		t.Fatalf("psql: unable to retrieve column types: %v", err)
+	}
+
+	int32Type := reflect.TypeOf(int32(0))
+	if colTypes[0].ScanType() != int32Type {
+		t.Fatalf("psql: column scan type is %s, but should be %s", colTypes[0].ScanType().String(), int32Type.String())
+	}
+}
+
+func TestMysqlShouldBeAbleToLockTables(t *testing.T) {
+	db, err := sql.Open("mysql_txdb", "locks")
+	if err != nil {
+		t.Fatalf("mysql: failed to open a mysql connection, have you run 'make test'? err: %s", err)
+	}
+	defer db.Close()
+
+	_, err = db.Exec("LOCK TABLE users READ")
+	if err != nil {
+		t.Fatalf("mysql: should be able to lock table, but got err: %v", err)
+	}
+
+	var count int
+	err = db.QueryRow("SELECT COUNT(*) FROM users").Scan(&count)
+	if err != nil {
+		t.Fatalf("mysql: unexpected read error: %v", err)
+	}
+	if count != 3 {
+		t.Fatalf("mysql: was expecting 3 users in db")
+	}
+
+	_, err = db.Exec("UNLOCK TABLES")
+	if err != nil {
+		t.Fatalf("mysql: should be able to unlock table, but got err: %v", err)
+	}
+}
+
+func TestShouldGetMultiRowSet(t *testing.T) {
+	t.Parallel()
+	for _, driver := range drivers() {
+		db, err := sql.Open(driver, "multiRows")
+		if err != nil {
+			t.Fatalf(driver+": failed to open a connection, have you run 'make test'? err: %s", err)
+		}
+		defer db.Close()
+
+		rows, err := db.QueryContext(context.Background(), "SELECT username FROM users; SELECT COUNT(*) FROM users;")
+		if err != nil {
+			t.Fatalf(driver+": failed to query users: %s", err)
+		}
+		defer rows.Close()
+
+		var users []string
+		for rows.Next() {
+			var name string
+			if err := rows.Scan(&name); err != nil {
+				t.Fatalf(driver+": unexpected row scan err: %v", err)
+			}
+			users = append(users, name)
+		}
+
+		if !rows.NextResultSet() {
+			t.Fatal(driver + ": expected next result set")
+		}
+
+		if !rows.Next() {
+			t.Fatal(driver + ": expected next result set - row")
+		}
+
+		var count int
+		if err := rows.Scan(&count); err != nil {
+			t.Fatalf(driver+": unexpected row scan err: %v", err)
+		}
+
+		if count != len(users) {
+			t.Fatal(driver + ": unexpected number of users")
+		}
+	}
+}
+
+func TestShouldBeAbleToPingWithContext(t *testing.T) {
+	for _, driver := range drivers() {
+		db, err := sql.Open(driver, "ping")
+		if err != nil {
+			t.Fatalf(driver+": failed to open a connection, have you run 'make test'? err: %s", err)
+		}
+		defer db.Close()
+
+		if err := db.PingContext(context.Background()); err != nil {
+			t.Fatalf(driver+": %v", err)
+		}
+	}
+}
+
+func TestShouldHandleStmtsWithoutContextPollution(t *testing.T) {
+	t.Parallel()
+	for _, driver := range drivers() {
+		t.Run(driver, func(t *testing.T) {
+			db, err := sql.Open(driver, "contextpollution")
+			if err != nil {
+				t.Fatalf(driver+": failed to open a connection, have you run 'make test'? err: %s", err)
+			}
+			defer db.Close()
+
+			insertSQL := "INSERT INTO users (username, email) VALUES(?, ?)"
+			if strings.Index(driver, "psql_") == 0 {
+				insertSQL = "INSERT INTO users (username, email) VALUES($1, $2)"
+			}
+
+			ctx1, cancel1 := context.WithCancel(context.Background())
+			defer cancel1()
+
+			_, err = db.ExecContext(ctx1, insertSQL, "first", "first@foo.com")
+			if err != nil {
+				t.Fatalf("unexpected error inserting user 1: %s", err)
+			}
+			cancel1()
+
+			ctx2, cancel2 := context.WithCancel(context.Background())
+			defer cancel2()
+
+			_, err = db.ExecContext(ctx2, insertSQL, "second", "second@foo.com")
+			if err != nil {
+				t.Fatalf("unexpected error inserting user 2: %s", err)
+			}
+			cancel2()
+
+			const selectQuery = `
+select username
+from users
+where username = 'first' OR username = 'second'`
+
+			rows, err := db.QueryContext(context.Background(), selectQuery)
+			if err != nil {
+				t.Fatalf("unexpected error querying users: %s", err)
+			}
+			defer rows.Close()
+
+			assertRows := func(t *testing.T, rows *sql.Rows) {
+				t.Helper()
+
+				var users []string
+				for rows.Next() {
+					var user string
+					err := rows.Scan(&user)
+					if err != nil {
+						t.Errorf("unexpected scan failure: %s", err)
+						continue
+					}
+					users = append(users, user)
+				}
+				sort.Strings(users)
+
+				wanted := []string{"first", "second"}
+
+				if len(users) != 2 {
+					t.Fatalf("invalid users received; want=%v\tgot=%v", wanted, users)
+				}
+				for i, want := range wanted {
+					if got := users[i]; want != got {
+						t.Errorf("invalid user; want=%s\tgot=%s", want, got)
+					}
+				}
+			}
+
+			assertRows(t, rows)
+
+			ctx3, cancel3 := context.WithCancel(context.Background())
+			defer cancel3()
+
+			stmt, err := db.PrepareContext(ctx3, selectQuery)
+			if err != nil {
+				t.Fatalf("unexpected error preparing stmt: %s", err)
+			}
+
+			rows, err = stmt.QueryContext(context.TODO())
+			if err != nil {
+				t.Fatalf("unexpected error in stmt querying users: %s", err)
+			}
+			defer rows.Close()
+
+			assertRows(t, rows)
 		})
 	}
 }

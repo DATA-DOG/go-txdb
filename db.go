@@ -20,33 +20,34 @@ Given, you have a mysql database called txdb_test and a table users with a usern
 column.
 
 Example:
-	package main
 
-	import (
-		"database/sql"
-		"log"
+		package main
 
-		"github.com/DATA-DOG/go-txdb"
-		_ "github.com/go-sql-driver/mysql"
-	)
+		import (
+			"database/sql"
+			"log"
 
-	func init() {
-		// we register an sql driver named "txdb"
-		txdb.Register("txdb", "mysql", "root@/txdb_test")
-	}
+			"github.com/DATA-DOG/go-txdb"
+			_ "github.com/go-sql-driver/mysql"
+		)
 
-	func main() {
-        // dsn serves as an unique identifier for connection pool
-		db, err := sql.Open("txdb", "identifier")
-		if err != nil {
-			log.Fatal(err)
+		func init() {
+			// we register an sql driver named "txdb"
+			txdb.Register("txdb", "mysql", "root@/txdb_test")
 		}
-		defer db.Close()
 
-		if _, err := db.Exec(`INSERT INTO users(username) VALUES("gopher")`); err != nil {
-			log.Fatal(err)
+		func main() {
+	        // dsn serves as an unique identifier for connection pool
+			db, err := sql.Open("txdb", "identifier")
+			if err != nil {
+				log.Fatal(err)
+			}
+			defer db.Close()
+
+			if _, err := db.Exec(`INSERT INTO users(username) VALUES("gopher")`); err != nil {
+				log.Fatal(err)
+			}
 		}
-	}
 
 Every time you will run this application, it will remain in the same state as before.
 */
@@ -85,7 +86,7 @@ import (
 // the dsn string when opening the sql.DB. The transaction will be
 // isolated within that dsn
 func Register(name, drv, dsn string, options ...func(*conn) error) {
-	sql.Register(name, &txDriver{
+	sql.Register(name, &TxDriver{
 		dsn:     dsn,
 		drv:     drv,
 		conns:   make(map[string]*conn),
@@ -100,7 +101,7 @@ type conn struct {
 	tx        *sql.Tx
 	dsn       string
 	opened    uint
-	drv       *txDriver
+	drv       *TxDriver
 	saves     uint
 	savePoint SavePoint
 
@@ -108,7 +109,7 @@ type conn struct {
 	ctx    interface{ Done() <-chan struct{} }
 }
 
-type txDriver struct {
+type TxDriver struct {
 	sync.Mutex
 	db       *sql.DB
 	realConn driver.Conn // Meant to be used as NamedValueChecker
@@ -119,7 +120,11 @@ type txDriver struct {
 	dsn string
 }
 
-func (d *txDriver) Open(dsn string) (driver.Conn, error) {
+func (d *TxDriver) DB() *sql.DB {
+	return d.db
+}
+
+func (d *TxDriver) Open(dsn string) (driver.Conn, error) {
 	d.Lock()
 	defer d.Unlock()
 	// first open a real database connection
@@ -156,7 +161,7 @@ func (d *txDriver) Open(dsn string) (driver.Conn, error) {
 	return c, nil
 }
 
-func (d *txDriver) deleteConn(dsn string) error {
+func (d *TxDriver) deleteConn(dsn string) error {
 	// d must be locked before call
 	delete(d.conns, dsn)
 	if len(d.conns) == 0 && d.db != nil {
@@ -189,11 +194,14 @@ func (c *conn) Close() (err error) {
 	c.opened--
 	if c.opened == 0 {
 		if c.tx != nil {
-			c.tx.Rollback()
+			err := c.tx.Rollback()
+			if err != nil {
+				return err
+			}
 			c.cancel()
 			c.tx = nil
 		}
-		c.drv.deleteConn(c.dsn)
+		return c.drv.deleteConn(c.dsn)
 	}
 	return
 }
