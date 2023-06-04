@@ -18,19 +18,27 @@ import (
 	_ "github.com/lib/pq"
 )
 
-var txDrivers = []struct {
-	name   string
-	driver string
-	dsn    string
+var txDrivers = []*struct {
+	name       string
+	driver     string
+	dsn        string
+	registered bool
 }{
 	{name: "mysql_txdb", driver: "mysql", dsn: "root:pass@/txdb_test?multiStatements=true"},
 	{name: "psql_txdb", driver: "postgres", dsn: "postgres://postgres:pass@localhost/txdb_test?sslmode=disable"},
 }
 
+var registerMu sync.Mutex
+
 func drivers() []string {
 	var all []string
 	for _, d := range txDrivers {
-		txdb.Register(d.name, d.driver, d.dsn)
+		registerMu.Lock()
+		if !d.registered {
+			txdb.Register(d.name, d.driver, d.dsn)
+			d.registered = true
+		}
+		registerMu.Unlock()
 		all = append(all, d.name)
 	}
 	return all

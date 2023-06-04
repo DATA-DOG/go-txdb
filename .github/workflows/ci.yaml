@@ -58,7 +58,7 @@ jobs:
             ${{ runner.os }}-go-
       - name: Create Table
         run: |
-	  make mysql
-	  make psql
+          make mysql
+          make psql
       - name: Run integration tests
         run: go test ./...
