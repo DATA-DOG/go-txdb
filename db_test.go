@@ -466,6 +466,8 @@ func TestShouldDiscardConnectionWhenClosedBecauseOfError(t *testing.T) {
 }
 
 func TestPostgresRowsScanTypeTables(t *testing.T) {
+	// make sure drivers are registered first
+	_ = drivers()
 	db, err := sql.Open("psql_txdb", "scantype")
 	if err != nil {
 		t.Fatalf("psql: failed to open a postgres connection, have you run 'make test'? err: %s", err)
@@ -489,6 +491,8 @@ func TestPostgresRowsScanTypeTables(t *testing.T) {
 }
 
 func TestMysqlShouldBeAbleToLockTables(t *testing.T) {
+	// make sure drivers are registered first
+	_ = drivers()
 	db, err := sql.Open("mysql_txdb", "locks")
 	if err != nil {
 		t.Fatalf("mysql: failed to open a mysql connection, have you run 'make test'? err: %s", err)
