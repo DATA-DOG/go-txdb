@@ -59,9 +59,9 @@ Every time you will run this application, it will remain in the same state as be
 
 Usage is mainly intended for testing purposes. See the **db_test.go** as
 an example. In order to run tests, you will need docker and
-docker-compose:
+docker compose:
 
-    docker-compose up
+    docker compose up
     make test
 
 The tests are currently using `postgres` and `mysql` databases

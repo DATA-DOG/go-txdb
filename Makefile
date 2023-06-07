@@ -26,12 +26,12 @@ INSERTS := "INSERT INTO users (username, email) VALUES ('gopher', 'gopher@go.com
 
 MYSQLCMD=mysql
 ifndef CI
-	MYSQLCMD=docker-compose exec mysql mysql
+	MYSQLCMD=docker compose exec mysql mysql
 endif
 
 PSQLCMD=psql
 ifndef CI
-	PSQLCMD=docker-compose exec postgres psql
+	PSQLCMD=docker compose exec postgres psql
 endif
 
 test: mysql psql
