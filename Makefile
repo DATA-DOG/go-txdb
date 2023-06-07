@@ -38,15 +38,15 @@ test: mysql psql
 	@go test -race -tags "mysql psql"
 
 mysql:
-	@$(MYSQLCMD) -h localhost -u root -e 'DROP DATABASE IF EXISTS txdb_test'
-	@$(MYSQLCMD) -h localhost -u root -e 'CREATE DATABASE txdb_test'
-	@$(MYSQLCMD) -h localhost -u root txdb_test -e $(MYSQL)
-	@$(MYSQLCMD) -h localhost -u root txdb_test -e $(INSERTS)
+	@$(MYSQLCMD) -h 127.0.0.1 -u root -ppass -e 'DROP DATABASE IF EXISTS txdb_test'
+	@$(MYSQLCMD) -h 127.0.0.1 -u root -ppass -e 'CREATE DATABASE txdb_test'
+	@$(MYSQLCMD) -h 127.0.0.1 -u root -ppass txdb_test -e $(MYSQL)
+	@$(MYSQLCMD) -h 127.0.0.1 -u root -ppass txdb_test -e $(INSERTS)
 
 psql:
-	@$(PSQLCMD) -U postgres -c 'DROP DATABASE IF EXISTS txdb_test'
-	@$(PSQLCMD) -U postgres -c 'CREATE DATABASE txdb_test'
-	@$(PSQLCMD) -U postgres txdb_test -c $(PSQL)
-	@$(PSQLCMD) -U postgres txdb_test -c $(INSERTS)
+	@$(PSQLCMD) "postgresql://postgres:pass@127.0.0.1" -c 'DROP DATABASE IF EXISTS txdb_test'
+	@$(PSQLCMD) "postgresql://postgres:pass@127.0.0.1" -c 'CREATE DATABASE txdb_test'
+	@$(PSQLCMD) "postgresql://postgres:pass@127.0.0.1/txdb_test" -c $(PSQL)
+	@$(PSQLCMD) "postgresql://postgres:pass@127.0.0.1/txdb_test" -c $(INSERTS)
 
 .PHONY: test mysql psql
