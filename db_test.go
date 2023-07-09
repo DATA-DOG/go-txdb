@@ -667,3 +667,59 @@ where username = 'first' OR username = 'second'`
 		})
 	}
 }
+
+// https://github.com/DATA-DOG/go-txdb/issues/49
+func TestIssue49(t *testing.T) {
+	t.Parallel()
+	for _, driver := range drivers() {
+		db, err := sql.Open(driver, "rollback")
+		if err != nil {
+			t.Fatalf(driver+": failed to open a connection, have you run 'make test'? err: %s", err)
+		}
+		defer db.Close()
+
+		// do a query prior to starting a nested transaction to
+		// reproduce the error
+		var count int
+		err = db.QueryRow("SELECT COUNT(id) FROM users").Scan(&count)
+		if err != nil {
+			t.Fatalf(driver+": prepared statement count err %v", err)
+		}
+		if count != 3 {
+			t.Logf("Count not 3: %d", count)
+			t.FailNow()
+		}
+
+		// start a nested transaction
+		tx, err := db.Begin()
+		if err != nil {
+			t.Fatalf(driver+": failed to start transaction: %s", err)
+		}
+		// need a prepared statement to reproduce the error
+		insertSQL := "INSERT INTO users (username, email) VALUES(?, ?)"
+		if strings.Index(driver, "psql_") == 0 {
+			insertSQL = "INSERT INTO users (username, email) VALUES($1, $2)"
+		}
+		stmt, err := tx.Prepare(insertSQL)
+		if err != nil {
+			t.Fatalf(driver+": failed to prepare named statement: %s", err)
+		}
+
+		// try to insert already existing username/email
+		_, err = stmt.Exec("gopher", "gopher@go.com")
+		if err == nil {
+			t.Fatalf(driver + ": double insert?")
+		}
+		// The insert failed, so we need to close the prepared statement
+		err = stmt.Close()
+		if err != nil {
+			t.Fatalf(driver+": error closing prepared statement: %s", err)
+		}
+		// rollback the transaction now that it has failed
+		err = tx.Rollback()
+		if err != nil {
+			t.Logf(driver+": failed rollback of failed transaction: %s", err)
+			t.FailNow()
+		}
+	}
+}
