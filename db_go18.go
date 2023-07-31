@@ -1,4 +1,4 @@
-// +build go1.8
+//go:build go1.8
 
 package txdb
 
@@ -131,7 +131,7 @@ func (c *conn) PrepareContext(ctx context.Context, query string) (driver.Stmt, e
 		case <-c.ctx.Done():
 		case erred := <-stmtFailedStr:
 			if erred {
-				c.cancel()
+				st.Close()
 			}
 		}
 	}()
