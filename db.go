@@ -107,8 +107,6 @@ func Register(name, drv, dsn string, options ...func(*conn) error) {
 	})
 }
 
-// txDriver is an sql driver which runs on single transaction
-// when the Close is called, transaction is rolled back
 type conn struct {
 	sync.Mutex
 	tx        *sql.Tx
@@ -122,6 +120,8 @@ type conn struct {
 	ctx    interface{ Done() <-chan struct{} }
 }
 
+// TxDriver is an sql driver which runs on single transaction
+// when the Close is called, transaction is rolled back
 type TxDriver struct {
 	sync.Mutex
 	db       *sql.DB
