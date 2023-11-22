@@ -63,8 +63,9 @@ import (
 	"sync"
 )
 
-// New returns a driver.Connector, which can be passed to sql.OpenDB. This can
-// be used in place of Register. It takes the same arguments as Register.
+// New returns a [database/sql/driver.Connector], which can be passed to
+// [database/sql.OpenDB]. This can be used in place of [Register].
+// It takes the same arguments as [Register], with the omission of name.
 func New(drv, dsn string, options ...func(*conn) error) driver.Connector {
 	return &TxDriver{
 		dsn:     dsn,
@@ -132,7 +133,7 @@ type TxDriver struct {
 	dsn string
 }
 
-// Connect satisfies the driver.Connector interface.
+// Connect satisfies the [database/sql/driver.Connector] interface.
 func (d *TxDriver) Connect(context.Context) (driver.Conn, error) {
 	// The DSN passed here doesn't matter, since it's only used to disambiguate
 	// connections, but that disambiguation happens in the call to New() when
@@ -140,7 +141,7 @@ func (d *TxDriver) Connect(context.Context) (driver.Conn, error) {
 	return d.Open("connector")
 }
 
-// Driver satisfies the driver.Connector interface.
+// Driver satisfies the [database/sql/driver.Connector] interface.
 func (d *TxDriver) Driver() driver.Driver {
 	return d
 }
