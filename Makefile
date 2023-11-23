@@ -35,7 +35,7 @@ ifndef CI
 endif
 
 test: mysql psql
-	@go test -race -tags "mysql psql"
+	@go test -race
 
 mysql:
 	@$(MYSQLCMD) -h 127.0.0.1 -u root -ppass -e 'DROP DATABASE IF EXISTS txdb_test'
