@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"os"
 	"reflect"
 	"sort"
 	"strings"
@@ -18,18 +19,52 @@ import (
 	_ "github.com/lib/pq"
 )
 
+var txDrivers = testDrivers{
+	{name: "mysql_txdb", driver: "mysql", dsnEnvKey: "MYSQL_DSN", options: "multiStatements=true"},
+	{name: "psql_txdb", driver: "postgres", dsnEnvKey: "PSQL_DSN", options: "sslmode=disable"},
+}
+
 type testDriver struct {
-	name       string
-	driver     string
-	dsn        string
+	// name is the name we use internally for the connection.
+	name string
+	// driver is the name registered by the driver when imported.
+	driver string
+	// dsnEnvKey is the name of an environment variable to fetch the DSN from.
+	// It is expected to include the name of the database, and any necessary
+	// credentials.
+	dsnEnvKey string
+	// options are optional parameters appended to the DSN before connecting
+	options string
+	// registered is set to true once the driver is registered, to prevent
+	// duplicate registration
 	registered bool
+}
+
+type testDrivers []*testDriver
+
+var registerMu sync.Mutex
+
+// dsn returns the full dsn for the test driver, or calls t.Skip if it is
+// unset or disabled.
+func (d *testDriver) dsn(t *testing.T) string {
+	dsn := os.Getenv(d.dsnEnvKey)
+	if dsn == "" {
+		t.Skipf("%s not set, skipping tests for %s", d.dsnEnvKey, d.driver)
+	}
+	if d.options == "" {
+		return dsn
+	}
+	return dsn + "?" + d.options
 }
 
 func (d *testDriver) register(t *testing.T) {
 	t.Helper()
+	registerMu.Lock()
+	defer registerMu.Unlock()
 	if !d.registered {
+		dsn := d.dsn(t)
 		d.registered = true
-		txdb.Register(d.name, d.driver, d.dsn)
+		txdb.Register(d.name, d.driver, dsn)
 	}
 }
 
@@ -42,8 +77,6 @@ func (d *testDriver) Run(t *testing.T, f func(t *testing.T, driver string)) {
 		f(t, d.name)
 	})
 }
-
-type testDrivers []testDriver
 
 // Run iterates over the configured drivers, and calls [testDriver.Run] on each.
 func (d testDrivers) Run(t *testing.T, f func(t *testing.T, driver string)) {
@@ -67,22 +100,17 @@ func (d testDrivers) drivers(names ...string) testDrivers {
 	return result
 }
 
-var txDrivers = testDrivers{
-	{name: "mysql_txdb", driver: "mysql", dsn: "root:pass@/txdb_test?multiStatements=true"},
-	{name: "psql_txdb", driver: "postgres", dsn: "postgres://postgres:pass@localhost/txdb_test?sslmode=disable"},
-}
-
-var registerMu sync.Mutex
-
 func TestShouldWorkWithOpenDB(t *testing.T) {
 	t.Parallel()
 	for _, d := range txDrivers {
-		db := sql.OpenDB(txdb.New(d.driver, d.dsn))
-		defer db.Close()
-		_, err := db.Exec("SELECT 1")
-		if err != nil {
-			t.Fatal(err)
-		}
+		d.Run(t, func(t *testing.T, _ string) {
+			db := sql.OpenDB(txdb.New(d.driver, d.dsn(t)))
+			defer db.Close()
+			_, err := db.Exec("SELECT 1")
+			if err != nil {
+				t.Fatal(err)
+			}
+		})
 	}
 }
 

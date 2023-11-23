@@ -55,4 +55,7 @@ jobs:
           make mysql
           make psql
       - name: Run integration tests
+        env:
+          MYSQL_DSN: "root:pass@/txdb_test"
+          PSQL_DSN: "postgres://postgres:pass@localhost/txdb_test"
         run: go test ./...
