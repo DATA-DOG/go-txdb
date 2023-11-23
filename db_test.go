@@ -44,6 +44,18 @@ func drivers() []string {
 	return all
 }
 
+func TestShouldWorkWithOpenDB(t *testing.T) {
+	t.Parallel()
+	for _, d := range txDrivers {
+		db := sql.OpenDB(txdb.New(d.driver, d.dsn))
+		defer db.Close()
+		_, err := db.Exec("SELECT 1")
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
 func TestShouldRunWithNestedTransaction(t *testing.T) {
 	t.Parallel()
 	for _, driver := range drivers() {

@@ -54,6 +54,7 @@ Every time you will run this application, it will remain in the same state as be
 package txdb
 
 import (
+	"context"
 	"database/sql"
 	"database/sql/driver"
 	"fmt"
@@ -61,6 +62,18 @@ import (
 	"reflect"
 	"sync"
 )
+
+// New returns a [database/sql/driver.Connector], which can be passed to
+// [database/sql.OpenDB]. This can be used in place of [Register].
+// It takes the same arguments as [Register], with the omission of name.
+func New(drv, dsn string, options ...func(*conn) error) driver.Connector {
+	return &TxDriver{
+		dsn:     dsn,
+		drv:     drv,
+		conns:   make(map[string]*conn),
+		options: options,
+	}
+}
 
 // Register a txdb sql driver under the given sql driver name
 // which can be used to open a single transaction based database
@@ -94,8 +107,6 @@ func Register(name, drv, dsn string, options ...func(*conn) error) {
 	})
 }
 
-// txDriver is an sql driver which runs on single transaction
-// when the Close is called, transaction is rolled back
 type conn struct {
 	sync.Mutex
 	tx        *sql.Tx
@@ -109,6 +120,8 @@ type conn struct {
 	ctx    interface{ Done() <-chan struct{} }
 }
 
+// TxDriver is an sql driver which runs on single transaction
+// when the Close is called, transaction is rolled back
 type TxDriver struct {
 	sync.Mutex
 	db       *sql.DB
@@ -118,6 +131,19 @@ type TxDriver struct {
 
 	drv string
 	dsn string
+}
+
+// Connect satisfies the [database/sql/driver.Connector] interface.
+func (d *TxDriver) Connect(context.Context) (driver.Conn, error) {
+	// The DSN passed here doesn't matter, since it's only used to disambiguate
+	// connections, but that disambiguation happens in the call to New() when
+	// used through the driver.Connector interface.
+	return d.Open("connector")
+}
+
+// Driver satisfies the [database/sql/driver.Connector] interface.
+func (d *TxDriver) Driver() driver.Driver {
+	return d
 }
 
 func (d *TxDriver) DB() *sql.DB {
