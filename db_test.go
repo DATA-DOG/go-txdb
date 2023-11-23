@@ -18,31 +18,61 @@ import (
 	_ "github.com/lib/pq"
 )
 
-var txDrivers = []*struct {
+type testDriver struct {
 	name       string
 	driver     string
 	dsn        string
 	registered bool
-}{
+}
+
+func (d *testDriver) register(t *testing.T) {
+	t.Helper()
+	if !d.registered {
+		d.registered = true
+		txdb.Register(d.name, d.driver, d.dsn)
+	}
+}
+
+// Run registers the driver, if not already registered, then calls f with the
+// driver name.
+func (d *testDriver) Run(t *testing.T, f func(t *testing.T, driver string)) {
+	t.Helper()
+	t.Run(d.name, func(t *testing.T) {
+		d.register(t)
+		f(t, d.name)
+	})
+}
+
+type testDrivers []testDriver
+
+// Run iterates over the configured drivers, and calls [testDriver.Run] on each.
+func (d testDrivers) Run(t *testing.T, f func(t *testing.T, driver string)) {
+	t.Helper()
+	for _, driver := range d {
+		driver.Run(t, f)
+	}
+}
+
+// driver returns the subset of d whose driver match one of the provided names.
+// Useful for tests that require specific database driver capabilities.
+func (d testDrivers) drivers(names ...string) testDrivers {
+	result := make(testDrivers, 0, len(d))
+	for _, driver := range d {
+		for _, name := range names {
+			if driver.driver == name {
+				result = append(result, driver)
+			}
+		}
+	}
+	return result
+}
+
+var txDrivers = testDrivers{
 	{name: "mysql_txdb", driver: "mysql", dsn: "root:pass@/txdb_test?multiStatements=true"},
 	{name: "psql_txdb", driver: "postgres", dsn: "postgres://postgres:pass@localhost/txdb_test?sslmode=disable"},
 }
 
 var registerMu sync.Mutex
-
-func drivers() []string {
-	var all []string
-	for _, d := range txDrivers {
-		registerMu.Lock()
-		if !d.registered {
-			txdb.Register(d.name, d.driver, d.dsn)
-			d.registered = true
-		}
-		registerMu.Unlock()
-		all = append(all, d.name)
-	}
-	return all
-}
 
 func TestShouldWorkWithOpenDB(t *testing.T) {
 	t.Parallel()
@@ -58,7 +88,7 @@ func TestShouldWorkWithOpenDB(t *testing.T) {
 
 func TestShouldRunWithNestedTransaction(t *testing.T) {
 	t.Parallel()
-	for _, driver := range drivers() {
+	txDrivers.Run(t, func(t *testing.T, driver string) {
 		var count int
 		db, err := sql.Open(driver, "five")
 		if err != nil {
@@ -154,12 +184,12 @@ func TestShouldRunWithNestedTransaction(t *testing.T) {
 				t.Fatalf(driver+": expected 3 users to be in database, but got %d", count)
 			}
 		}(db)
-	}
+	})
 }
 
 func TestShouldRunWithinTransaction(t *testing.T) {
 	t.Parallel()
-	for _, driver := range drivers() {
+	txDrivers.Run(t, func(t *testing.T, driver string) {
 		var count int
 		db, err := sql.Open(driver, "one")
 		if err != nil {
@@ -197,12 +227,12 @@ func TestShouldRunWithinTransaction(t *testing.T) {
 				t.Fatalf(driver+": expected 3 users to be in database, but got %d", count)
 			}
 		}(db)
-	}
+	})
 }
 
 func TestShouldNotHoldConnectionForRows(t *testing.T) {
 	t.Parallel()
-	for _, driver := range drivers() {
+	txDrivers.Run(t, func(t *testing.T, driver string) {
 		db, err := sql.Open(driver, "three")
 		if err != nil {
 			t.Fatalf(driver+": failed to open a connection, have you run 'make test'? err: %s", err)
@@ -219,12 +249,12 @@ func TestShouldNotHoldConnectionForRows(t *testing.T) {
 		if err != nil {
 			t.Fatalf(driver+": failed to insert an user: %s", err)
 		}
-	}
+	})
 }
 
 func TestShouldPerformParallelActions(t *testing.T) {
 	t.Parallel()
-	for _, driver := range drivers() {
+	txDrivers.Run(t, func(t *testing.T, driver string) {
 		db, err := sql.Open(driver, "four")
 		if err != nil {
 			t.Fatalf(driver+": failed to open a connection, have you run 'make test'? err: %s", err)
@@ -263,12 +293,12 @@ func TestShouldPerformParallelActions(t *testing.T) {
 		if count != 7 {
 			t.Fatalf(driver+": expected 7 users to be in database, but got %d", count)
 		}
-	}
+	})
 }
 
 func TestShouldFailInvalidPrepareStatement(t *testing.T) {
 	t.Parallel()
-	for _, driver := range drivers() {
+	txDrivers.Run(t, func(t *testing.T, driver string) {
 		db, err := sql.Open(driver, "fail_prepare")
 		if err != nil {
 			t.Fatalf(driver+": failed to open a connection, have you run 'make test'? err: %s", err)
@@ -278,12 +308,12 @@ func TestShouldFailInvalidPrepareStatement(t *testing.T) {
 		if _, err = db.Prepare("THIS SHOULD FAIL..."); err == nil {
 			t.Fatalf(driver + ": expected an error, since prepare should validate sql query, but got none")
 		}
-	}
+	})
 }
 
 func TestShouldHandlePrepare(t *testing.T) {
 	t.Parallel()
-	for _, driver := range drivers() {
+	txDrivers.Run(t, func(t *testing.T, driver string) {
 		db, err := sql.Open(driver, "prepare")
 		if err != nil {
 			t.Fatalf(driver+": failed to open a connection, have you run 'make test'? err: %s", err)
@@ -318,11 +348,11 @@ func TestShouldHandlePrepare(t *testing.T) {
 		if err != nil {
 			t.Fatalf(driver+": should have inserted user - %s", err)
 		}
-	}
+	})
 }
 
 func TestShouldCloseRootDB(t *testing.T) {
-	for _, driver := range drivers() {
+	txDrivers.Run(t, func(t *testing.T, driver string) {
 		db1, err := sql.Open(driver, "first")
 		if err != nil {
 			t.Fatalf(driver+": failed to open a connection, have you run 'make test'? err: %s", err)
@@ -383,11 +413,11 @@ func TestShouldCloseRootDB(t *testing.T) {
 		if drv2.DB() != nil {
 			t.Fatalf(driver+": expected closed database, not %v", drv2.DB())
 		}
-	}
+	})
 }
 
 func TestShouldReopenAfterClose(t *testing.T) {
-	for _, driver := range drivers() {
+	txDrivers.Run(t, func(t *testing.T, driver string) {
 		db, err := sql.Open(driver, "first")
 		if err != nil {
 			t.Fatalf(driver+": failed to open a connection, have you run 'make test'? err: %s", err)
@@ -417,7 +447,7 @@ func TestShouldReopenAfterClose(t *testing.T) {
 		if err := db.Ping(); err != nil {
 			t.Fatalf(driver+": failed to ping, have you run 'make test'? err: %s", err)
 		}
-	}
+	})
 }
 
 type canceledContext struct{}
@@ -432,7 +462,7 @@ func (canceledContext) Err() error                        { return errors.New("c
 func (canceledContext) Value(key interface{}) interface{} { return nil }
 
 func TestShouldDiscardConnectionWhenClosedBecauseOfError(t *testing.T) {
-	for _, driver := range drivers() {
+	txDrivers.Run(t, func(t *testing.T, driver string) {
 		t.Run(fmt.Sprintf("using driver %s", driver), func(t *testing.T) {
 			{
 				db, err := sql.Open(driver, "first")
@@ -474,66 +504,66 @@ func TestShouldDiscardConnectionWhenClosedBecauseOfError(t *testing.T) {
 				}
 			}
 		})
-	}
+	})
 }
 
 func TestPostgresRowsScanTypeTables(t *testing.T) {
-	// make sure drivers are registered first
-	_ = drivers()
-	db, err := sql.Open("psql_txdb", "scantype")
-	if err != nil {
-		t.Fatalf("psql: failed to open a postgres connection, have you run 'make test'? err: %s", err)
-	}
-	defer db.Close()
+	txDrivers.drivers("postgres").Run(t, func(t *testing.T, driver string) {
+		db, err := sql.Open(driver, "scantype")
+		if err != nil {
+			t.Fatalf("psql: failed to open a postgres connection, have you run 'make test'? err: %s", err)
+		}
+		defer db.Close()
 
-	rows, err := db.Query("SELECT 1")
-	if err != nil {
-		t.Fatalf("psql: unable to execute trivial query: %v", err)
-	}
+		rows, err := db.Query("SELECT 1")
+		if err != nil {
+			t.Fatalf("psql: unable to execute trivial query: %v", err)
+		}
 
-	colTypes, err := rows.ColumnTypes()
-	if err != nil {
-		t.Fatalf("psql: unable to retrieve column types: %v", err)
-	}
+		colTypes, err := rows.ColumnTypes()
+		if err != nil {
+			t.Fatalf("psql: unable to retrieve column types: %v", err)
+		}
 
-	int32Type := reflect.TypeOf(int32(0))
-	if colTypes[0].ScanType() != int32Type {
-		t.Fatalf("psql: column scan type is %s, but should be %s", colTypes[0].ScanType().String(), int32Type.String())
-	}
+		int32Type := reflect.TypeOf(int32(0))
+		if colTypes[0].ScanType() != int32Type {
+			t.Fatalf("psql: column scan type is %s, but should be %s", colTypes[0].ScanType().String(), int32Type.String())
+		}
+	})
 }
 
 func TestMysqlShouldBeAbleToLockTables(t *testing.T) {
-	// make sure drivers are registered first
-	_ = drivers()
-	db, err := sql.Open("mysql_txdb", "locks")
-	if err != nil {
-		t.Fatalf("mysql: failed to open a mysql connection, have you run 'make test'? err: %s", err)
-	}
-	defer db.Close()
+	txDrivers.drivers("mysql").Run(t, func(t *testing.T, driver string) {
+		db, err := sql.Open(driver, "locks")
+		if err != nil {
+			t.Fatalf("mysql: failed to open a mysql connection, have you run 'make test'? err: %s", err)
+		}
+		defer db.Close()
 
-	_, err = db.Exec("LOCK TABLE users READ")
-	if err != nil {
-		t.Fatalf("mysql: should be able to lock table, but got err: %v", err)
-	}
+		_, err = db.Exec("LOCK TABLE users READ")
+		if err != nil {
+			t.Fatalf("mysql: should be able to lock table, but got err: %v", err)
+		}
 
-	var count int
-	err = db.QueryRow("SELECT COUNT(*) FROM users").Scan(&count)
-	if err != nil {
-		t.Fatalf("mysql: unexpected read error: %v", err)
-	}
-	if count != 3 {
-		t.Fatalf("mysql: was expecting 3 users in db")
-	}
+		var count int
+		err = db.QueryRow("SELECT COUNT(*) FROM users").Scan(&count)
+		if err != nil {
+			t.Fatalf("mysql: unexpected read error: %v", err)
+		}
+		if count != 3 {
+			t.Fatalf("mysql: was expecting 3 users in db")
+		}
 
-	_, err = db.Exec("UNLOCK TABLES")
-	if err != nil {
-		t.Fatalf("mysql: should be able to unlock table, but got err: %v", err)
-	}
+		_, err = db.Exec("UNLOCK TABLES")
+		if err != nil {
+			t.Fatalf("mysql: should be able to unlock table, but got err: %v", err)
+		}
+	})
 }
 
 func TestShouldGetMultiRowSet(t *testing.T) {
 	t.Parallel()
-	for _, driver := range drivers() {
+	txDrivers.Run(t, func(t *testing.T, driver string) {
 		db, err := sql.Open(driver, "multiRows")
 		if err != nil {
 			t.Fatalf(driver+": failed to open a connection, have you run 'make test'? err: %s", err)
@@ -571,11 +601,11 @@ func TestShouldGetMultiRowSet(t *testing.T) {
 		if count != len(users) {
 			t.Fatal(driver + ": unexpected number of users")
 		}
-	}
+	})
 }
 
 func TestShouldBeAbleToPingWithContext(t *testing.T) {
-	for _, driver := range drivers() {
+	txDrivers.Run(t, func(t *testing.T, driver string) {
 		db, err := sql.Open(driver, "ping")
 		if err != nil {
 			t.Fatalf(driver+": failed to open a connection, have you run 'make test'? err: %s", err)
@@ -585,12 +615,12 @@ func TestShouldBeAbleToPingWithContext(t *testing.T) {
 		if err := db.PingContext(context.Background()); err != nil {
 			t.Fatalf(driver+": %v", err)
 		}
-	}
+	})
 }
 
 func TestShouldHandleStmtsWithoutContextPollution(t *testing.T) {
 	t.Parallel()
-	for _, driver := range drivers() {
+	txDrivers.Run(t, func(t *testing.T, driver string) {
 		t.Run(driver, func(t *testing.T) {
 			db, err := sql.Open(driver, "contextpollution")
 			if err != nil {
@@ -677,13 +707,13 @@ where username = 'first' OR username = 'second'`
 
 			assertRows(t, rows)
 		})
-	}
+	})
 }
 
 // https://github.com/DATA-DOG/go-txdb/issues/49
 func TestIssue49(t *testing.T) {
 	t.Parallel()
-	for _, driver := range drivers() {
+	txDrivers.Run(t, func(t *testing.T, driver string) {
 		db, err := sql.Open(driver, "rollback")
 		if err != nil {
 			t.Fatalf(driver+": failed to open a connection, have you run 'make test'? err: %s", err)
@@ -733,5 +763,5 @@ func TestIssue49(t *testing.T) {
 			t.Logf(driver+": failed rollback of failed transaction: %s", err)
 			t.FailNow()
 		}
-	}
+	})
 }
