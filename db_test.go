@@ -52,11 +52,25 @@ func (d *testDriver) dsn(t *testing.T) (base string, full string) {
 	if base == "" {
 		t.Skipf("%s not set, skipping tests for %s", d.dsnEnvKey, d.driver)
 	}
+	if strings.ToLower(base) == "auto" {
+		base = d.startTestContainer(t)
+	}
 	full = strings.TrimSuffix(base, "/") + "/" + testDB
 	if d.options == "" {
 		return base, full
 	}
 	return base + "?" + d.options, full + "?" + d.options
+}
+
+func (d *testDriver) startTestContainer(t *testing.T) string {
+	switch d.driver {
+	case "postgres":
+		return startPostgres(t)
+	case "mysql":
+		return startMySQL(t)
+	default:
+		panic("cannot start testcontainer for driver " + d.driver)
+	}
 }
 
 func (d *testDriver) register(t *testing.T) {

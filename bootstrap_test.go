@@ -1,8 +1,16 @@
 package txdb_test
 
 import (
+	"context"
 	"database/sql"
+	"strings"
 	"testing"
+	"time"
+
+	"github.com/testcontainers/testcontainers-go"
+	"github.com/testcontainers/testcontainers-go/modules/mysql"
+	"github.com/testcontainers/testcontainers-go/modules/postgres"
+	"github.com/testcontainers/testcontainers-go/wait"
 )
 
 const (
@@ -53,10 +61,51 @@ func createDB(t *testing.T, driver, dsn string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.Exec("DROP DATABASE IF EXISTS txdb_test"); err != nil {
+	if _, err := db.Exec("DROP DATABASE IF EXISTS " + testDB); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.Exec("CREATE DATABASE txdb_test"); err != nil {
+	if _, err := db.Exec("CREATE DATABASE " + testDB); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func startPostgres(t *testing.T) string {
+	ctx := context.Background()
+
+	postgresContainer, err := postgres.RunContainer(ctx,
+		testcontainers.WithImage("docker.io/postgres:15.2-alpine"),
+		postgres.WithDatabase(testDB),
+		testcontainers.WithWaitStrategy(
+			wait.ForLog("database system is ready to accept connections").
+				WithOccurrence(2).
+				WithStartupTimeout(5*time.Second)),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	dsn, err := postgresContainer.ConnectionString(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return strings.TrimSuffix(dsn, testDB+"?")
+}
+
+func startMySQL(t *testing.T) string {
+	ctx := context.Background()
+
+	mysqlContainer, err := mysql.RunContainer(ctx,
+		testcontainers.WithImage("mysql:8"),
+		mysql.WithUsername("root"),
+		mysql.WithPassword("password"),
+		mysql.WithDatabase(testDB),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dsn, err := mysqlContainer.ConnectionString(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return strings.TrimSuffix(dsn, testDB)
 }
