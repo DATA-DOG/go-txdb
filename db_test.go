@@ -30,13 +30,13 @@ type testDriver struct {
 	// driver is the name registered by the driver when imported.
 	driver string
 	// dsnEnvKey is the name of an environment variable to fetch the DSN from.
-	// It is expected to include the name of the database, and any necessary
-	// credentials.
+	// The DSN is expected to include the name of the database, and any
+	// necessary credentials.
 	dsnEnvKey string
-	// options are optional parameters appended to the DSN before connecting
+	// options are optional parameters appended to the DSN before connecting.
 	options string
 	// registered is set to true once the driver is registered, to prevent
-	// duplicate registration
+	// duplicate registration.
 	registered bool
 }
 

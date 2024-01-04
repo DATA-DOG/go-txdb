@@ -33,7 +33,7 @@ const (
 	testDB = "txdb_test"
 )
 
-// bootstrap bootstraps the database with the nfor tests.
+// bootstrap bootstraps the database for tests.
 func bootstrap(t *testing.T, driver, dsn string) {
 	db, err := sql.Open(driver, dsn)
 	if err != nil {
