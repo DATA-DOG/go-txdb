@@ -80,14 +80,19 @@ Every time you will run this application, it will remain in the same state as be
 
 ### Testing
 
-Usage is mainly intended for testing purposes. See the **db_test.go** as
-an example. In order to run tests, you will need docker and
-docker compose:
+Usage is mainly intended for testing purposes. Tests require database access, support using `postgres` and `mysql` databases. The easiest way to do this is by using [testcontainers](https://golang.testcontainers.org/), which is enabled by setting the respective database DSN values to `AUTO`. Example:
 
-    docker compose up
-    make test
+```bash
+MYSQL_DSN=AUTO PSQL_DSN=AUTO go test ./...
+```
 
-The tests are currently using `postgres` and `mysql` databases
+If you wish to use a running local database instance, you can also provide the DSN directly, and it will be used:
+
+```bash
+MYSQL_DSN=root:pass@/ PSQL_DSN=postgres://postgres:pass@localhost/ go test ./...
+```
+
+To run tests only against MySQL or PostgreSQL, you may provide only the respective DSN values; any unset DSN is skipped for tests.
 
 ### Documentation
 
