@@ -161,6 +161,17 @@ func (c *txConnector) Driver() driver.Driver {
 	return c.driver
 }
 
+// Close is called when [database/sql.DB.Close] is called, and the Close method
+// on any opened connections.
+func (c *txConnector) Close() error {
+	for _, conn := range c.driver.conns {
+		if err := conn.Close(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (d *TxDriver) DB() *sql.DB {
 	return d.db
 }
