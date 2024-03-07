@@ -1,53 +1,52 @@
 /*
-Package txdb is a single transaction based database sql driver. When the connection
-is opened, it starts a transaction and all operations performed on this *sql.DB
-will be within that transaction. If concurrent actions are performed, the lock is
-acquired and connection is always released the statements and rows are not holding the
-connection.
+Package txdb is a single transaction based [database/sql/driver] implementation.
+When the connection is opened, it starts a transaction and all operations
+performed on the returned [database/sql.DB] will be within that transaction. If
+concurrent actions are performed, the lock is acquired and connection is always
+released the statements and rows are not holding the connection.
 
-Why is it useful. A very basic use case would be if you want to make functional tests
-you can prepare a test database and within each test you do not have to reload a database.
-All tests are isolated within transaction and though, performs fast. And you do not have
-to interface your sql.DB reference in your code, txdb is like a standard sql.Driver.
+Why is it useful? A very basic use case would be if you want to make functional
+tests, you can prepare a test database and within each test you do not have to
+reload a database. All tests are isolated within a transaction and execute fast.
+And you do not have to interface your [database/sql.DB] reference in your code,
+txdb is like a standard [database/sql/driver.Driver].
 
-This driver supports any sql.Driver connection to be opened. You can register txdb
-for different sql drivers and have it under different driver names. Under the hood
-whenever a txdb driver is opened, it attempts to open a real connection and starts
-transaction. When close is called, it rollbacks transaction leaving your prepared
-test database in the same state as before.
+This driver supports any [database/sql/driver.Driver] connection to be opened.
+You can register txdb for different drivers and have it under different driver
+names. Under the hood whenever a txdb driver is opened, it attempts to open a
+real connection and starts transaction. When close is called, it rollbacks
+transaction leaving your prepared test database in the same state as before.
 
-Given, you have a mysql database called txdb_test and a table users with a username
-column.
+Example, assuming you have a mysql database called txdb_test and a table users with a
+username:
 
-Example:
+	package main
 
-		package main
+	import (
+		"database/sql"
+		"log"
 
-		import (
-			"database/sql"
-			"log"
+		"github.com/DATA-DOG/go-txdb"
+		_ "github.com/go-sql-driver/mysql"
+	)
 
-			"github.com/DATA-DOG/go-txdb"
-			_ "github.com/go-sql-driver/mysql"
-		)
+	func init() {
+		// we register an sql driver named "txdb"
+		txdb.Register("txdb", "mysql", "root@/txdb_test")
+	}
 
-		func init() {
-			// we register an sql driver named "txdb"
-			txdb.Register("txdb", "mysql", "root@/txdb_test")
+	func main() {
+		// dsn serves as an unique identifier for connection pool
+		db, err := sql.Open("txdb", "identifier")
+		if err != nil {
+			log.Fatal(err)
 		}
+		defer db.Close()
 
-		func main() {
-	        // dsn serves as an unique identifier for connection pool
-			db, err := sql.Open("txdb", "identifier")
-			if err != nil {
-				log.Fatal(err)
-			}
-			defer db.Close()
-
-			if _, err := db.Exec(`INSERT INTO users(username) VALUES("gopher")`); err != nil {
-				log.Fatal(err)
-			}
+		if _, err := db.Exec(`INSERT INTO users(username) VALUES("gopher")`); err != nil {
+			log.Fatal(err)
 		}
+	}
 
 Every time you will run this application, it will remain in the same state as before.
 */
@@ -78,29 +77,25 @@ func New(drv, dsn string, options ...func(*conn) error) driver.Connector {
 	}
 }
 
-// Register a txdb sql driver under the given sql driver name
-// which can be used to open a single transaction based database
+// Register registers a txdb sql driver under the given sql driver name
+// which can be used to open a single transaction based database connection.
+//
+// When Open is called any number of times it returns the same transaction
 // connection.
 //
-// When Open is called any number of times it returns
-// the same transaction connection.
-//
 // Any Begin, Commit calls will not start or close the transaction.
-// Instead the savepoint will be created, released or rolled back.
-// In case if your SQL driver does not support save points - use nil
-// for the SavePointOption argument. If driver has non default
+// Instead the savepoint will be created, released, or rolled back.
+// If your SQL driver does not support save points, use nil
+// for the SavePointOption argument. If driver has non-default
 // save point logic, you can override the default with SavePointOption.
 //
-// When Close is called, the transaction is rolled back.
+// When [Close] is called, the transaction is rolled back.
 //
-// Use drv (Driver) and dsn (DataSourceName) as the standard sql properties for
-// your test database connection to be isolated within transaction.
+// The drv dsn are passed to [databse/sql.Open].
 //
-// The drv and dsn are the same items passed into `sql.Open(drv, dsn)`.
-//
-// Note: if you open a secondary database, make sure to differianciate
-// the dsn string when opening the sql.DB. The transaction will be
-// isolated within that dsn
+// Note: if you open a secondary database, make sure to differentiate
+// the dsn string when opening the [driver/sql.DB]. The transaction will be
+// isolated within that dsn.
 func Register(name, drv, dsn string, options ...func(*conn) error) {
 	sql.Register(name, &TxDriver{
 		dsn:     dsn,
@@ -123,8 +118,9 @@ type conn struct {
 	ctx    interface{ Done() <-chan struct{} }
 }
 
-// TxDriver is an sql driver which runs on single transaction
-// when the Close is called, transaction is rolled back
+// TxDriver is a [database/sql/driver.Driver] implementation which runs on
+// single transaction. When [database/sql.DB.Close] is called, transaction is
+// rolled back.
 type TxDriver struct {
 	sync.Mutex
 	db       *sql.DB
