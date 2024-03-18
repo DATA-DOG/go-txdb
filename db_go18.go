@@ -53,16 +53,17 @@ func (c *conn) beginTxOnce(ctx context.Context, done <-chan struct{}) (*sql.Tx, 
 	}
 	go func() {
 		select {
+		case <-ctx.Done():
+			select {
+			case <-done:
+				// the operation successfully finished at the "same time" as context cancellation, so we won't close ctx on tx
+			default:
+				// operation was interrupted by context cancel, so we cancel parent as well
+				c.cancel()
+			}
 		case <-done:
 			// operation was successfully finished, so we don't close ctx on tx
 		case <-c.ctx.Done():
-		default:
-			select {
-			case <-ctx.Done():
-				// operation was interrupted by context cancel, so we cancel parent as well
-				c.cancel()
-			default:
-			}
 		}
 	}()
 	return c.tx, nil
