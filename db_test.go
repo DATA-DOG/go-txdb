@@ -808,3 +808,38 @@ func TestIssue49(t *testing.T) {
 		}
 	})
 }
+
+func TestShouldRunWithHeavyWork(t *testing.T) {
+	t.Parallel()
+
+	testFn := func(t *testing.T, db *sql.DB) {
+		t.Helper()
+
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		row, err := db.QueryContext(ctx, "SELECT 1 from HeavyWork")
+		if err != nil {
+			t.Fatalf("failed to query users: %s", err)
+		}
+		if err := row.Close(); err != nil {
+			t.Fatalf("failed to close rows: %s", err)
+		}
+	}
+
+	txDrivers.Run(t, func(t *testing.T, driver *testDriver) {
+		db, err := sql.Open(driver.name, "HeavyWork")
+		if err != nil {
+			t.Fatalf("failed to open a connection: %s", err)
+		}
+		defer db.Close()
+
+		_, err = db.Exec("CREATE TABLE IF NOT EXISTS HeavyWork (id INT, name VARCHAR(255))")
+		if err != nil {
+			t.Fatalf("failed to create table: %s", err)
+		}
+
+		for i := 0; i < 10000; i++ {
+			testFn(t, db)
+		}
+	})
+}
