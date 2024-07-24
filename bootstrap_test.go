@@ -72,8 +72,7 @@ func createDB(t *testing.T, driver, dsn string) {
 func startPostgres(t *testing.T) string {
 	ctx := context.Background()
 
-	postgresContainer, err := postgres.RunContainer(ctx,
-		testcontainers.WithImage("docker.io/postgres:15.2-alpine"),
+	postgresContainer, err := postgres.Run(ctx, "docker.io/postgres:15.2-alpine",
 		postgres.WithDatabase(testDB),
 		testcontainers.WithWaitStrategy(
 			wait.ForLog("database system is ready to accept connections").
@@ -94,8 +93,7 @@ func startPostgres(t *testing.T) string {
 func startMySQL(t *testing.T) string {
 	ctx := context.Background()
 
-	mysqlContainer, err := mysql.RunContainer(ctx,
-		testcontainers.WithImage("mysql:8"),
+	mysqlContainer, err := mysql.Run(ctx, "mysql:8",
 		mysql.WithUsername("root"),
 		mysql.WithPassword("password"),
 		mysql.WithDatabase(testDB),
