@@ -367,6 +367,20 @@ func (c *conn) Query(query string, args []driver.Value) (driver.Rows, error) {
 	return buildRows(rs)
 }
 
+// Implement the NamedValueChecker interface
+func (c *conn) CheckNamedValue(nv *driver.NamedValue) error {
+	if nvc, ok := c.drv.realConn.(driver.NamedValueChecker); ok {
+		return nvc.CheckNamedValue(nv)
+	}
+
+	switch nv.Value.(type) {
+	case sql.Out:
+		return nil
+	default:
+		return driver.ErrSkip
+	}
+}
+
 type stmt struct {
 	mu   sync.Mutex
 	st   *sql.Stmt
