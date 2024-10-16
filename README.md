@@ -46,12 +46,16 @@ func main() {
         log.Fatal(err)
     }
     defer db.Close()
+    db.SetMaxOpenConns(1)
 
     if _, err := db.Exec(`INSERT INTO users(username) VALUES("gopher")`); err != nil {
         log.Fatal(err)
     }
 }
 ```
+
+Note that `db.SetMaxOpenConns(1)` disables concurrent database transactions,
+which [txdb does not support](https://github.com/DATA-DOG/go-txdb/issues/69).
 
 You can also use [`sql.OpenDB`](https://golang.org/pkg/database/sql/#OpenDB) (added in Go 1.10) rather than registering a txdb driver instance, if you prefer:
 
@@ -69,6 +73,7 @@ import (
 func main() {
     db := sql.OpenDB(txdb.New("mysql", "root@/txdb_test"))
     defer db.Close()
+    db.SetMaxOpenConns(1)
 
     if _, err := db.Exec(`INSERT INTO users(username) VALUES("gopher")`); err != nil {
         log.Fatal(err)
