@@ -25,6 +25,7 @@ jobs:
         with:
           go-version: ${{ matrix.go }}
       - name: Run integration tests
+        working-directory: ./tests
         env:
           MYSQL_DSN: AUTO
           PSQL_DSN: AUTO
